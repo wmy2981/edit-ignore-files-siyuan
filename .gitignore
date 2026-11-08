@@ -1,0 +1,8 @@
+node_modules/
+dev-refs
+dist/
+package.zip
+/index.js
+/index.css
+/i18n/
+*.local.md
