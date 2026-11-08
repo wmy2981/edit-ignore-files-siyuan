@@ -15,8 +15,8 @@
     "zh-CN": "编辑同步忽略"
   },
   "description": {
-    "default": "Edit the sync ignore list (data/.siyuan/syncignore) with a line-numbered editor.",
-    "zh-CN": "用带行号的编辑器编辑同步忽略列表（data/.siyuan/syncignore）。"
+    "default": "Edit the sync ignore file (data/.siyuan/syncignore) in SiYuan.",
+    "zh-CN": "在思源内编辑同步忽略文件（data/.siyuan/syncignore）。"
   },
   "readme": {
     "default": "README.md",

@@ -4,8 +4,6 @@
 
 A SiYuan plugin that edits the data sync ignore list (`data/.siyuan/syncignore`) with a line-numbered editor, so the rules no longer have to be edited by hand in a file manager.
 
-![Preview](https://gcore.jsdelivr.net/gh/wmy2981/edit-syncignore-siyuan@dev/assets/preview.png)
-
 ## Features
 
 - One click to edit: the `Settings` icon in the plugin list opens the editor directly, there is no extra settings panel.

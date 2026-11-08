@@ -4,8 +4,6 @@
 
 一个思源笔记插件：用带行号的编辑器编辑数据同步忽略列表（`data/.siyuan/syncignore`），不用再去文件管理器里手改。
 
-![预览图](https://gcore.jsdelivr.net/gh/wmy2981/edit-syncignore-siyuan@dev/assets/preview.png)
-
 ## 功能
 
 - 点一下就编辑：插件列表里的「设置」直接打开编辑器，没有多余的设置面板。
