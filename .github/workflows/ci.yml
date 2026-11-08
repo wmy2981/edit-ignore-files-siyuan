@@ -1,0 +1,64 @@
+name: CI
+
+# push main/dev、PR 与手动触发都跑同一套检查：类型检查、单元测试、生产构建，再核对 zip 必需文件
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check version consistency
+        run: |
+          set -euo pipefail
+          plugin_version=$(node -p "require('./plugin.json').version")
+          package_version=$(node -p "require('./package.json').version")
+          if [ "$plugin_version" != "$package_version" ]; then
+            echo "::error::plugin.json ($plugin_version) and package.json ($package_version) versions differ"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package contents
+        run: |
+          set -euo pipefail
+          required="plugin.json index.js index.css icon.png preview.png README.md README.zh-CN.md LICENSE i18n/en.json i18n/zh-CN.json"
+          listing=$(unzip -Z1 package.zip)
+          for file in $required; do
+            if ! grep -qx "$file" <<< "$listing"; then
+              echo "::error::package.zip is missing $file"
+              exit 1
+            fi
+          done
+          echo "package.zip contains every required file"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: package.zip
