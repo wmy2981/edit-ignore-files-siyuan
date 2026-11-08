@@ -121,7 +121,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         content,
         width: mobile ? "100vw" : "720px",
         // 抽屉自己按可用视口算高度，旧版本没有抽屉样式时才用固定高度
-        height: mobile && hasHostBottomSheetStyles() ? "auto" : "70vh",
+        height: mobile && hasHostBottomSheetStyles() ? "auto" : "60vh",
         containerClassName: "eds-dialog",
         // 关闭入口统一由插件自己提供，桌面端本来就不显示这个图标
         hideCloseIcon: true,
