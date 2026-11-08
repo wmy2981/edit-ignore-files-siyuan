@@ -6,12 +6,19 @@
 
 ```bash
 npm ci             # 安装依赖（CI 使用 npm ci）
-npm run typecheck  # tsc --noEmit
+npm run typecheck  # tsc --noEmit，只检查 src
+npm test           # tsc -p tsconfig.test.json && node --test，输出到 test-dist/（已忽略）
 npm run build      # 生产构建，输出 dist/ 与 package.zip
 npm run dev        # watch 构建，只写根目录 index.js/index.css/i18n/；验证时不要运行
 npm run render:icon    # assets/icon.svg → assets/icon.png
 npm run render:preview # assets/preview.html → assets/preview.png（需要 npx playwright install chromium）
 ```
+
+`npm test` 先用 `tsconfig.test.json` 把 `test/` 和被引用的 `src/` 模块编译成 CommonJS 到 `test-dist/`，再用 Node 内置测试运行器跑，不引入测试框架。测试只覆盖不依赖思源的纯逻辑；新增测试文件要同时加进 `package.json` 的 `test` 脚本（Node 20 不展开 glob，目录参数也不稳）。
+
+## CI
+
+`.github/workflows/ci.yml` 在 push `main`/`dev`、PR 与手动触发时运行：`npm ci` → 版本一致性 → `typecheck` → `test` → `build` → 用 `unzip -Z1` 核对 `package.zip` 必需文件 → 上传 `package.zip` artifact。Node 固定 20。`.github/workflows/cd.yml` 只在 push `main` 时按版本比较发 Release。
 
 ## 模块
 
@@ -19,6 +26,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - `src/syncignore.ts` — 文件读写与语法检查。读 `POST /api/file/getFile`（裸文本，失败是 HTTP 202 + JSON），写 `POST /api/file/putFile`（multipart）。**必须用裸 `fetch`**：`siyuan.fetchSyncPost` 会把响应当 JSON 解析，读文本文件时必然抛错。
 - `src/editorDialog.ts` — 对话框本体：行号槽、折叠指导、语法错误列表、保存/关闭守卫。保存流程是「重读比对 → 冲突确认 → 写入 → 回读校验」。
 - `src/sheet.ts` — 移动端底部抽屉，按宿主规则实现：类名（`mobile-bottom-sheet-dialog` / `mobile-sheet-layout` / `mobile-bottom-sheet` / `mobile-sheet-panel`）、抓手（`b3-menu__title--root`）、56% 上限与 `chrome + 120px` 下限、入场前的视口等待、拖拽阈值与 scrim 淡出、松手后 300ms 点击抑制。
+- `src/sheetGesture.ts` — 抽屉手势的纯函数（可用区间、56% 上限、位移推进、松手关闭判定），与宿主 `mobileSheetGesture` 的公式一致，便于单元测试。
 - `src/index.scss` — 全部样式，颜色/圆角/间距只用 `--b3-*` 变量。类名 `.eds*` 与 `.eds-dialog` 都是本插件私有。
 
 ## manifest 约束

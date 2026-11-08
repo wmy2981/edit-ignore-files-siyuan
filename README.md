@@ -52,6 +52,7 @@ SiYuan appends a few built-in rules itself (`/.siyuan/conf.json`, user guide dat
 ```bash
 npm ci              # install dependencies
 npm run typecheck   # type checking
+npm test            # unit tests, no SiYuan instance needed
 npm run build       # production build, writes dist/ and package.zip
 npm run dev         # watch build
 npm run render:icon # assets/icon.svg → assets/icon.png

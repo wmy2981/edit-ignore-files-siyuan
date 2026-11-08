@@ -52,6 +52,7 @@
 ```bash
 npm ci              # 安装依赖
 npm run typecheck   # 类型检查
+npm test            # 单元测试（不依赖思源实例）
 npm run build       # 生产构建，输出 dist/ 与 package.zip
 npm run dev         # watch 构建
 npm run render:icon # assets/icon.svg → assets/icon.png
