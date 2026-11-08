@@ -31,6 +31,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 ## 已知限制与偏离
 
 - **抽屉是自建实现**：宿主的 `bindBottomSheetDialog` / `bindBottomSheetDrag` / `mobileSheetLayout` 未导出给插件，`src/sheet.ts` 按同样的规则自行实现，以便动画与拖拽手感与宿主一致。这偏离了「不要复制宿主抽屉实现」的默认规则，属于本项目的明确选择；宿主改版后需要按源码重新核对。
+- 抽屉未移植宿主的两处周边行为：一是 `keyboard--sheet-open` 状态类（宿主的 `keyboardSheetState` 用它给主题派生样式，插件加入会与宿主自己的 Set 打架），二是内容子树的 MutationObserver（插件内容在打开后只有语法提示行会变化，不需要重新布局）。
 - 入场沿用宿主做法，会在手势/入场期间临时写内联 `transition` 并强制一次重排（`void sheet.offsetHeight`），这与「不接管动画时序」的默认规则相反，同样是刻意为之。
 - `Dialog.beforeClose` 直到 3.8.9 才存在。旧版本上「未保存修改」的确认由插件自己拦截遮罩点击与 `Esc` 提供，移动端返回手势无法拦截。
 - 内核没有 syncignore 的读写接口，全部走原始文件 API。
