@@ -9,10 +9,10 @@ A SiYuan plugin that edits the data sync ignore list (`data/.siyuan/syncignore`)
 ## Features
 
 - One click to edit: the `Settings` icon in the plugin list opens the editor directly, there is no extra settings panel.
-- Real SiYuan UI: the native `Dialog`, `b3-button` styles and bottom sheet are used as-is, no custom window chrome.
+- Real SiYuan UI: the native `Dialog` and `b3-button` styles are used as-is, and the mobile drawer follows the host's own sheet classes, grip and drag thresholds, with no custom window chrome.
 - Line-numbered editor: line numbers stay aligned with the text, long lines scroll horizontally instead of wrapping.
 - Editing guide: one collapsed line in the panel that explains the syntax and shows an example; click it to expand.
-- Syntax errors only: rules that cannot work as written are reported (an invalid backslash escape, unbalanced parentheses, an unclosed bracket, a misplaced `+`, a bare `!` with no rule). Style suggestions are not shown, and errors never block saving.
+- Syntax errors only: rules that cannot work as written are reported (an invalid backslash escape, unbalanced parentheses, an unclosed bracket, an illegal `+` or `{…}` repeat, a `*` inside a character class, a reversed class range, a bare `!` with no rule). Style suggestions are not shown, and errors never block saving.
 - Saved by exact round trip: the file is read again before saving, only the text you see is written, and it is read again afterwards to verify what landed on disk. Lines written by other tools are preserved untouched.
 - Unsaved changes are guarded: cancelling, clicking the scrim, pressing `Esc` or dragging the sheet down asks for confirmation first.
 - Mobile drawer identical to SiYuan's own: the same grip, the same viewport-based height, the same opening sequence and pull-to-dismiss thresholds, and it can be dragged taller.
@@ -55,6 +55,7 @@ npm ci              # install dependencies
 npm run typecheck   # type checking
 npm test            # unit tests, no SiYuan instance needed
 npm run build       # production build, writes dist/ and package.zip
+npm run verify:package # check what package.zip contains
 npm run dev         # watch build
 npm run render:icon # assets/icon.svg → assets/icon.png
 npm run render:preview # assets/preview.html → assets/preview.png
