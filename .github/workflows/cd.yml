@@ -47,6 +47,13 @@ jobs:
         id: build
         run: npm run build
 
+      # 发布前自己再验一遍，不能指望另一条 CI workflow 已经把过关
+      - name: Unit tests
+        run: npm test
+
+      - name: Verify package contents
+        run: npm run verify:package
+
       - name: Compare with the latest tag
         id: compare
         run: |

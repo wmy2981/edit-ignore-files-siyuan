@@ -45,17 +45,7 @@ jobs:
         run: npm run build
 
       - name: Verify package contents
-        run: |
-          set -euo pipefail
-          required="plugin.json index.js index.css icon.png preview.png README.md README.zh-CN.md LICENSE i18n/en.json i18n/zh-CN.json"
-          listing=$(unzip -Z1 package.zip)
-          for file in $required; do
-            if ! grep -qx "$file" <<< "$listing"; then
-              echo "::error::package.zip is missing $file"
-              exit 1
-            fi
-          done
-          echo "package.zip contains every required file"
+        run: npm run verify:package
 
       - name: Upload package
         uses: actions/upload-artifact@v4

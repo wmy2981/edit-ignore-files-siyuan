@@ -1,13 +1,14 @@
 {
   "name": "edit-syncignore-siyuan",
   "version": "0.1.0",
-  "description": "Edit the SiYuan sync ignore list with a line-numbered editor.",
+  "description": "Edit the sync ignore file (data/.siyuan/syncignore) in SiYuan.",
   "main": "src/index.ts",
   "scripts": {
     "dev": "webpack --config webpack.config.js --mode development",
     "build": "webpack --config webpack.config.js --mode production",
     "typecheck": "tsc --noEmit",
     "test": "tsc -p tsconfig.test.json && node --test test-dist/test/lint.test.js test-dist/test/sheetGesture.test.js test-dist/test/syncignore.test.js",
+    "verify:package": "node scripts/verify-package.mjs",
     "render:icon": "node scripts/render-icon.mjs",
     "render:preview": "node scripts/render-preview.mjs"
   },
