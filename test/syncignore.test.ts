@@ -48,14 +48,21 @@ describe("readSyncIgnore", () => {
         assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { path: "data/.siyuan/syncignore" });
     });
 
-    test("strips a UTF-8 BOM and remembers it for the write back", async () => {
+    test("strips a UTF-8 BOM from the body and flags it", async () => {
         stubFetch(() => response(200, "\uFEFF/assets/"));
         const result = await readSyncIgnore();
         assert.equal(result.ok, true);
         assert.deepEqual(result.ok && result.snapshot, { text: "/assets/", bom: true });
     });
 
-    test("treats HTTP 202 as a failure and surfaces the kernel message", async () => {
+    test("treats a missing file as empty content", async () => {
+        // 用户没建过忽略列表时，内核返回 202 + code 404
+        stubFetch(() => response(202, JSON.stringify({ code: 404, msg: "not found" })));
+        const result = await readSyncIgnore();
+        assert.deepEqual(result, { ok: true, snapshot: { text: "", bom: false } });
+    });
+
+    test("treats other HTTP 202 bodies as failures", async () => {
         stubFetch(() => response(202, JSON.stringify({ code: -1, msg: "path does not exist" })));
         const result = await readSyncIgnore();
         assert.deepEqual(result, { ok: false, message: "path does not exist" });
@@ -65,6 +72,12 @@ describe("readSyncIgnore", () => {
         stubFetch(() => response(202, "not json"));
         const result = await readSyncIgnore();
         assert.deepEqual(result, { ok: false, message: "HTTP 202" });
+    });
+
+    test("falls back to the kernel code when it has no message", async () => {
+        stubFetch(() => response(202, JSON.stringify({ code: 500 })));
+        const result = await readSyncIgnore();
+        assert.deepEqual(result, { ok: false, message: "code 500" });
     });
 
     test("reports other HTTP errors", async () => {
@@ -85,7 +98,7 @@ describe("readSyncIgnore", () => {
 describe("writeSyncIgnore", () => {
     test("posts the body as multipart form data with the fixed path", async () => {
         stubFetch(() => response(200, JSON.stringify({ code: 0, msg: "", data: null })));
-        const result = await writeSyncIgnore("/assets/", false);
+        const result = await writeSyncIgnore("/assets/");
         assert.deepEqual(result, { ok: true, message: "" });
         assert.equal(calls[0].url, "/api/file/putFile");
         assert.equal(calls[0].init?.method, "POST");
@@ -97,25 +110,38 @@ describe("writeSyncIgnore", () => {
         assert.equal(await file.text(), "/assets/");
     });
 
-    test("writes the BOM back when the file had one", async () => {
+    test("never writes a BOM, because the kernel does not strip it", async () => {
         stubFetch(() => response(200, JSON.stringify({ code: 0 })));
-        await writeSyncIgnore("/assets/", true);
+        await writeSyncIgnore("/assets/");
         const file = (calls[0].init?.body as FormData).get("file") as File;
         // Blob.text() 会在解码时吃掉 BOM，这里直接看字节
         const bytes = new Uint8Array(await file.arrayBuffer());
-        assert.deepEqual(Array.from(bytes.slice(0, 3)), [0xEF, 0xBB, 0xBF]);
-        assert.equal(new TextDecoder().decode(bytes.slice(3)), "/assets/");
+        assert.notDeepEqual(Array.from(bytes.slice(0, 3)), [0xEF, 0xBB, 0xBF]);
+        assert.equal(bytes[0], "/".charCodeAt(0));
     });
 
     test("surfaces a kernel error code", async () => {
         stubFetch(() => response(200, JSON.stringify({ code: -1, msg: "refuse to write" })));
-        const result = await writeSyncIgnore("/assets/", false);
+        const result = await writeSyncIgnore("/assets/");
         assert.deepEqual(result, { ok: false, message: "refuse to write" });
+    });
+
+    test("requires code 0 in the response body", async () => {
+        // HTTP 200 但应答不是内核的成功体，不能当成写入成功
+        stubFetch(() => response(200, "ok", "OK"));
+        const result = await writeSyncIgnore("/assets/");
+        assert.deepEqual(result, { ok: false, message: "200 OK" });
+    });
+
+    test("requires code 0, not just a successful status", async () => {
+        stubFetch(() => response(200, JSON.stringify({ msg: "no code" })));
+        const result = await writeSyncIgnore("/assets/");
+        assert.deepEqual(result, { ok: false, message: "no code" });
     });
 
     test("reports an HTTP failure without a JSON body", async () => {
         stubFetch(() => response(500, "<html>boom</html>", "Internal Server Error"));
-        const result = await writeSyncIgnore("/assets/", false);
+        const result = await writeSyncIgnore("/assets/");
         assert.deepEqual(result, { ok: false, message: "500 Internal Server Error" });
     });
 
@@ -123,7 +149,7 @@ describe("writeSyncIgnore", () => {
         globalThis.fetch = (async () => {
             throw new Error("offline");
         }) as unknown as typeof fetch;
-        const result = await writeSyncIgnore("/assets/", false);
+        const result = await writeSyncIgnore("/assets/");
         assert.deepEqual(result, { ok: false, message: "Error: offline" });
     });
 });

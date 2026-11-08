@@ -36,6 +36,13 @@
   line-height: 18px;
 }
 
+.eds__notice {
+  flex-shrink: 0;
+  color: var(--b3-card-warning-color, var(--b3-theme-on-surface));
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .eds__lint {
   flex-shrink: 0;
   max-height: 84px;
@@ -43,6 +50,8 @@
   color: var(--b3-card-error-color, var(--b3-theme-error));
   font-size: 12px;
   line-height: 18px;
+  // 确有的滚动区域在移动端抽屉动画期间要常驻图层提示
+  will-change: transform;
 
   &[hidden] {
     display: none;
@@ -96,6 +105,8 @@
   color: var(--b3-theme-on-background);
   white-space: pre;
   overflow: auto;
+  // 正文的滚动区域同样常驻图层提示
+  will-change: transform;
   // 移动端浏览器会把小于 16px 的输入框放大
   font-size: 16px;
 

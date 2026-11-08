@@ -4,7 +4,7 @@
   "guideRule1": "每行一条规则，以 data 目录为基准，例如 /assets/ 或 /assets/*.pdf。",
   "guideRule2": "# 开头是注释，! 开头表示取消忽略（取反），* 匹配任意字符，** 匹配多级目录。",
   "guideRule3": "建议以 / 开头，避免同名路径被误匹配；排除整个目录时写成 /目录/。",
-  "guideRule4": "路径分隔符用 /，不要用反斜杠；行尾不要留空格。",
+  "guideRule4": "路径分隔符用 /；反斜杠在内核里按正则转义处理，写错会让整条规则失效。",
   "guideRule5": "文件里可能包含其他工具写入的规则，本插件不会自动调整它们；保存后规则在下次同步时生效。",
   "placeholder": "每行一条规则，例如 /assets/*.pdf",
   "cancel": "取消",
@@ -17,8 +17,11 @@
   "discardText": "关闭后本次修改不会保留。",
   "conflictTitle": "文件已被改动",
   "conflictText": "同步忽略文件在你编辑期间被思源或其它工具改动过，继续保存会用当前内容覆盖它。",
-  "lintBackslash": "第 {line} 行含反斜杠，路径分隔符必须用 /",
-  "lintEmptyNegation": "第 {line} 行只有 ! 却没有规则内容",
-  "lintUnclosedClass": "第 {line} 行的字符类 [ 没有闭合",
-  "lintMore": "还有 {count} 处语法错误"
+  "bomNotice": "文件带 UTF-8 BOM，内核会把它当成第一条规则的一部分，使第一条规则失效；保存时会自动去掉。",
+  "lintInvalidEscape": "第 {line} 行的反斜杠转义无效，内核会跳过这条规则",
+  "lintUnclosedClass": "第 {line} 行的 [ 没有闭合，内核会跳过这条规则",
+  "lintUnbalancedGroup": "第 {line} 行的圆括号不成对，内核会跳过这条规则",
+  "lintBadRepetition": "第 {line} 行的 + 位置不对，内核会跳过这条规则",
+  "lintEmptyNegation": "第 {line} 行只有 ! 却没有规则，会取消前面所有忽略规则",
+  "lintMore": "还有 {count} 处写法会让内核跳过规则"
 }

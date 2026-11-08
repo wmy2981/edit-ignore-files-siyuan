@@ -4,6 +4,7 @@ import { closeSyncIgnoreEditor, openSyncIgnoreEditor } from "./editorDialog";
 
 export default class EditSyncIgnore extends Plugin {
     declare i18n: Record<string, string>;
+    private unloaded = false;
 
     /**
      * 覆写宿主的设置入口：点击插件列表里的「设置」直接打开编辑器，
@@ -11,11 +12,16 @@ export default class EditSyncIgnore extends Plugin {
      * 因此这里必须是原型方法而不是实例属性。
      */
     openSetting() {
+        // 插件被禁用后宿主的旧引用仍可能调用进来
+        if (this.unloaded) {
+            return;
+        }
         void openSyncIgnoreEditor({ i18n: this.i18n });
     }
 
     onunload() {
         // 编辑器由插件持有，禁用或重载插件时一并关闭，避免监听器残留
+        this.unloaded = true;
         closeSyncIgnoreEditor();
     }
 }

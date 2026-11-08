@@ -4,7 +4,7 @@
   "guideRule1": "One rule per line, relative to the data directory, for example /assets/ or /assets/*.pdf.",
   "guideRule2": "Lines starting with # are comments, ! negates a rule, * matches any characters and ** matches nested directories.",
   "guideRule3": "Start rules with / so look-alike paths elsewhere are not matched; use /folder/ to exclude a whole directory.",
-  "guideRule4": "Use / as the path separator instead of a backslash, and leave no trailing spaces.",
+  "guideRule4": "Use / as the path separator; the kernel treats a backslash as a regex escape, and a wrong one disables the whole rule.",
   "guideRule5": "The file may contain rules written by other tools; this plugin never rewrites them. Saved rules take effect on the next sync.",
   "placeholder": "One rule per line, for example /assets/*.pdf",
   "cancel": "Cancel",
@@ -17,8 +17,11 @@
   "discardText": "Your changes will be lost after closing.",
   "conflictTitle": "The file has changed",
   "conflictText": "The sync ignore file was modified by SiYuan or another tool while you were editing. Saving now overwrites those changes.",
-  "lintBackslash": "Line {line} contains a backslash, the separator must be /",
-  "lintEmptyNegation": "Line {line} is only ! with no rule",
-  "lintUnclosedClass": "Line {line} has an unclosed character class [",
-  "lintMore": "{count} more syntax errors"
+  "bomNotice": "This file starts with a UTF-8 BOM; the kernel treats it as part of the first rule and silently disables it. Saving removes the BOM.",
+  "lintInvalidEscape": "Line {line} has an invalid backslash escape, the kernel skips this rule",
+  "lintUnclosedClass": "Line {line} has an unclosed [, the kernel skips this rule",
+  "lintUnbalancedGroup": "Line {line} has unbalanced parentheses, the kernel skips this rule",
+  "lintBadRepetition": "Line {line} misuses +, the kernel skips this rule",
+  "lintEmptyNegation": "Line {line} is only ! with no rule, which cancels every earlier rule",
+  "lintMore": "{count} more lines make the kernel skip rules"
 }

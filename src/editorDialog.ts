@@ -4,11 +4,11 @@
 // - 有未保存改动时，取消、点遮罩、按 Esc、拖动下拉都必须先确认；
 // - 保存前重读文件比对，内核可能在我们编辑期间改写它（加载规则前会做外观隔离块清理）；
 // - 保存后回读校验，确认落盘内容与编辑器一致。
-import { confirm, Dialog, getFrontend, showMessage } from "siyuan";
+import { Dialog, confirm, getFrontend, showMessage } from "siyuan";
 import { bindMobileBottomSheet, hasHostBottomSheetStyles } from "./sheet";
 import type { SheetHandle } from "./sheet";
 import { lintSyncIgnore, readSyncIgnore, writeSyncIgnore } from "./syncignore";
-import type { LintIssue } from "./syncignore";
+import type { LintIssue, ReadResult } from "./syncignore";
 
 const LINT_LIMIT = 5;
 const LINT_DELAY = 150;
@@ -21,11 +21,29 @@ type DialogOptions = ConstructorParameters<typeof Dialog>[0] & {
     beforeClose?: () => boolean;
 };
 
+// 宿主把打开的对话框按顺序放在 window.siyuan.dialogs 里，Esc 关的是最后一个
+type HostWindow = Window & { siyuan?: { dialogs?: { element: HTMLElement }[] } };
+
+const LINT_KEYS: Record<LintIssue["kind"], string> = {
+    emptyNegation: "lintEmptyNegation",
+    invalidEscape: "lintInvalidEscape",
+    unclosedClass: "lintUnclosedClass",
+    unbalancedGroup: "lintUnbalancedGroup",
+    badRepetition: "lintBadRepetition",
+};
+
 let openedDialog: Dialog | undefined;
 let closeActiveEditor: (() => void) | undefined;
 let opening = false;
+// 插件卸载时自增，用来让正在读盘的打开流程作废
+let generation = 0;
 
 const isMobileFrontend = () => getFrontend().includes("mobile");
+
+const isTopmostDialog = (element: HTMLElement) => {
+    const dialogs = (window as HostWindow).siyuan?.dialogs;
+    return !dialogs?.length || dialogs[dialogs.length - 1].element === element;
+};
 
 const format = (template: string, values: Record<string, string | number>) =>
     template.replace(/\{(\w+)\}/g, (_matched: string, key: string) => String(values[key] ?? ""));
@@ -60,25 +78,26 @@ export interface OpenEditorOptions {
 export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<void> => {
     const i18n = options.i18n;
     const t = (key: string) => i18n[key] ?? "";
-    const describeIssue = (issue: LintIssue) => {
-        switch (issue.kind) {
-            case "backslash":
-                return format(t("lintBackslash"), { line: issue.line });
-            case "emptyNegation":
-                return format(t("lintEmptyNegation"), { line: issue.line });
-            default:
-                return format(t("lintUnclosedClass"), { line: issue.line });
-        }
-    };
+    const describeIssue = (issue: LintIssue) => format(t(LINT_KEYS[issue.kind]), { line: issue.line });
 
     // 读取是异步的，用独立的标志位挡住连点造成的重复打开
     if (openedDialog || opening) {
         return;
     }
     opening = true;
-    const read = await readSyncIgnore();
-    if (!read.ok) {
+    const current = generation;
+    let read: ReadResult;
+    try {
+        read = await readSyncIgnore();
+    } finally {
+        // 读盘结束就放开标志，后面是同步创建对话框，不会重复打开
         opening = false;
+    }
+    // 读盘期间插件被卸载或重载
+    if (current !== generation) {
+        return;
+    }
+    if (!read.ok) {
         showMessage(format(t("readFailed"), { msg: read.message }), 6000, "error");
         return;
     }
@@ -89,6 +108,8 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     let confirming = false;
     let lintTimer = 0;
 
+    // 内核不剥 BOM，带 BOM 的文件第一条规则会失效；保存时统一不写回 BOM
+    const notice = initial.bom ? `<div class="eds__notice">${escapeHtml(t("bomNotice"))}</div>` : "";
     const content = `<div class="b3-dialog__content eds">
     <details class="eds__guide">
         <summary>${escapeHtml(t("guideSummary"))}</summary>
@@ -100,6 +121,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
             <li>${escapeHtml(t("guideRule5"))}</li>
         </ul>
     </details>
+    ${notice}
     <div class="eds__lint b3-label__text" hidden></div>
     <div class="eds__editor">
         <div class="eds__gutter" aria-hidden="true">${renderGutter(initial.text.split("\n").length)}</div>
@@ -136,8 +158,6 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         },
         destroyCallback: () => {
             disposed = true;
-            openedDialog = undefined;
-            closeActiveEditor = undefined;
             window.clearTimeout(lintTimer);
             document.removeEventListener("keydown", onKeydown, true);
             dialog.element.removeEventListener("click", onScrimClick, true);
@@ -155,19 +175,28 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
 
     const isDirty = () => textarea.value !== initial.text;
 
+    // 关闭时先放开模块级引用，销毁动画期间的点击不会被过期的对话框挡住
+    const disposeDialog = () => {
+        openedDialog = undefined;
+        closeActiveEditor = undefined;
+        dialog.destroy();
+    };
+
     const renderLint = () => {
         const issues = disposed ? [] : lintSyncIgnore(textarea.value);
         if (!issues.length) {
             lintBox.hidden = true;
             lintBox.textContent = "";
-            return;
+        } else {
+            const lines = issues.slice(0, LINT_LIMIT).map(describeIssue);
+            if (issues.length > LINT_LIMIT) {
+                lines.push(format(t("lintMore"), { count: issues.length - LINT_LIMIT }));
+            }
+            lintBox.hidden = false;
+            lintBox.innerHTML = lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
         }
-        const lines = issues.slice(0, LINT_LIMIT).map(describeIssue);
-        if (issues.length > LINT_LIMIT) {
-            lines.push(format(t("lintMore"), { count: issues.length - LINT_LIMIT }));
-        }
-        lintBox.hidden = false;
-        lintBox.innerHTML = lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
+        // 提示行的出现或消失改变了内容高度，让抽屉重新量一次
+        sheetHandle?.relayout();
     };
 
     const syncScroll = () => {
@@ -191,7 +220,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         if (allowed || !isDirty()) {
             allowed = true;
             sheetHandle?.freeze();
-            dialog.destroy();
+            disposeDialog();
             return true;
         }
         if (confirming) {
@@ -200,12 +229,12 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         confirming = true;
         const discard = await askConfirm(t("discardTitle"), t("discardText"));
         confirming = false;
-        if (!discard) {
+        if (!discard || disposed) {
             return false;
         }
         allowed = true;
         sheetHandle?.freeze();
-        dialog.destroy();
+        disposeDialog();
         return true;
     };
 
@@ -224,9 +253,9 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         if (event.key !== "Escape" || event.isComposing || event.keyCode === 229) {
             return;
         }
-        // 确认框由宿主打开并持有焦点，此时 Esc 归它处理
-        const active = document.activeElement;
-        if (confirming || !active || !dialog.element.contains(active)) {
+        // 宿主的 Esc 会直接 destroy 最上层对话框，绕过未保存确认；这里改成走自己的关闭流程。
+        // 上方还有别的对话框（比如宿主的确认框）时交给宿主处理。
+        if (confirming || !isTopmostDialog(dialog.element)) {
             return;
         }
         event.preventDefault();
@@ -235,7 +264,12 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     };
 
     const save = async () => {
+        if (disposed) {
+            return;
+        }
         saveButton.disabled = true;
+        // 保存期间锁住编辑，避免落盘内容与界面上看到的文本不一致
+        textarea.readOnly = true;
         try {
             const text = textarea.value;
             const current = await readSyncIgnore();
@@ -245,11 +279,11 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
             }
             if (current.snapshot.text !== initial.text) {
                 const overwrite = await askConfirm(t("conflictTitle"), t("conflictText"));
-                if (!overwrite) {
+                if (!overwrite || disposed) {
                     return;
                 }
             }
-            const written = await writeSyncIgnore(text, initial.bom);
+            const written = await writeSyncIgnore(text);
             if (!written.ok) {
                 showMessage(format(t("saveFailed"), { msg: written.message }), 6000, "error");
                 return;
@@ -259,12 +293,16 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
                 showMessage(t("saveUnverified"), 6000, "error");
                 return;
             }
+            if (disposed) {
+                return;
+            }
             showMessage(t("saved"), 2000);
             allowed = true;
-            dialog.destroy();
+            disposeDialog();
         } finally {
             if (!disposed) {
                 saveButton.disabled = false;
+                textarea.readOnly = false;
             }
         }
     };
@@ -286,17 +324,18 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     }
 
     openedDialog = dialog;
-    opening = false;
     // 插件被禁用或重载时直接关闭，不再走“是否放弃修改”的确认
     closeActiveEditor = () => {
         allowed = true;
         sheetHandle?.freeze();
-        dialog.destroy();
+        disposeDialog();
     };
     renderLint();
 };
 
 /** 插件卸载时调用：关闭可能还开着的编辑器，避免监听器残留。 */
 export const closeSyncIgnoreEditor = () => {
+    // 让正在读盘的打开流程作废，避免卸载后弹出孤儿对话框
+    generation += 1;
     closeActiveEditor?.();
 };
