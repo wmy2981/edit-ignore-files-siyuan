@@ -8,6 +8,9 @@
 //   - 入场：先移到视口外并隐藏，等键盘/视口稳定后再展开，不在动画期间改变内容；
 //   - 拖拽：整块面板都能起手（输入框、按钮等除外），只有从抓手起手才改高度，其余是下拉位移；
 //   - 关闭：excess 超过 min(120px, 下限 × 25%)，或下拉超过 20px 且速度大于 0.6px/ms。
+//
+// 注意：自建抽屉与 MOBILE_FLICKER.md §一.4 / §一.5 / §一.6 与 §四「不要复制宿主抽屉」的规则相反，
+// 属于本项目的刻意选择（宿主没有导出这些能力），理由与偏离清单见 CLAUDE.md「已知限制与偏离」。
 import type {Dialog} from "siyuan";
 import { getSheetBounds, getStandardMaxHeight, moveSheetGesture, shouldCloseSheet } from "./sheetGesture";
 import type { SheetGesture } from "./sheetGesture";
@@ -18,12 +21,37 @@ const EXCLUDE_SELECTOR = 'input, textarea, select, button, [contenteditable="tru
     '.block__icon, .b3-dialog__close, [draggable="true"]';
 const CROSS_AXIS_TOLERANCE = 4;
 
-type HostWindow = Window & { siyuan?: { config?: { system?: { container?: string } } } };
+type MobileSize = { isLandscape?: boolean, portrait?: { height1?: number }, landscape?: { height1?: number } };
+type HostWindow = Window & {
+    siyuan?: {
+        config?: { system?: { container?: string } },
+        mobile?: { size?: MobileSize },
+    }
+};
 
 // App 内的可视视口由原生层负责，只有浏览器才需要读 visualViewport
 const isMobileApp = () => {
     const container = (window as HostWindow).siyuan?.config?.system?.container;
     return container === "android" || container === "ios" || container === "harmony";
+};
+
+// 与宿主 orientation.ts 一致：优先看 screen.orientation，退化时用不受软键盘影响的屏幕尺寸
+const isLandscape = () => {
+    const type = window.screen.orientation?.type;
+    if (type?.startsWith("landscape")) {
+        return true;
+    }
+    if (type?.startsWith("portrait")) {
+        return false;
+    }
+    return window.screen.width > window.screen.height;
+};
+
+// 完整视口高度取宿主按横竖屏记录的高度，键盘压缩后的 innerHeight 不能覆盖它
+const getFullHeight = () => {
+    const size = (window as HostWindow).siyuan?.mobile?.size;
+    const direction = isLandscape() ? size?.landscape : size?.portrait;
+    return Math.max(window.innerHeight, direction?.height1 || 0);
 };
 
 const viewportBounds = () => {
@@ -74,13 +102,16 @@ const waitForSheetViewport = (options: {
 
 let sheetStylesSupported: boolean | undefined;
 
-const hasSheetRule = (rules: CSSRuleList): boolean => {
+// 宿主抽屉样式里，布局层给遮罩留安全区、面板层让正文撑满，两个缺一不可
+const SHEET_SELECTORS = [".mobile-sheet-layout", ".mobile-sheet-panel"];
+
+const hasSheetRule = (rules: CSSRuleList, selector: string): boolean => {
     for (const rule of Array.from(rules)) {
-        if (rule instanceof CSSStyleRule && rule.selectorText.includes(".mobile-bottom-sheet")) {
+        if (rule instanceof CSSStyleRule && rule.selectorText.includes(selector)) {
             return true;
         }
         const nested = (rule as CSSGroupingRule).cssRules;
-        if (nested && hasSheetRule(nested)) {
+        if (nested && hasSheetRule(nested, selector)) {
             return true;
         }
     }
@@ -88,25 +119,21 @@ const hasSheetRule = (rules: CSSRuleList): boolean => {
 };
 
 /**
- * 探测宿主是否定义了抽屉样式。样式只在 3.8.10-alpha.5 之后存在，探测不到就退回普通对话框。
+ * 探测宿主是否定义了抽屉样式。这两组样式自 3.8.10-alpha.5 起齐全，探测不到就退回普通对话框。
  */
 export const hasHostBottomSheetStyles = (): boolean => {
     if (sheetStylesSupported !== undefined) {
         return sheetStylesSupported;
     }
-    sheetStylesSupported = false;
+    const sheets: CSSRuleList[] = [];
     for (const styleSheet of Array.from(document.styleSheets)) {
-        let rules: CSSRuleList;
         try {
-            rules = styleSheet.cssRules;
+            sheets.push(styleSheet.cssRules);
         } catch {
-            continue;
-        }
-        if (hasSheetRule(rules)) {
-            sheetStylesSupported = true;
-            break;
+            // 跨域样式表读不到规则，跳过
         }
     }
+    sheetStylesSupported = SHEET_SELECTORS.every(selector => sheets.some(rules => hasSheetRule(rules, selector)));
     return sheetStylesSupported;
 };
 
@@ -119,6 +146,8 @@ export interface SheetOptions {
 export interface SheetHandle {
     /** 关闭前冻结当前高度，让退出位移从已绘制的位置滑出 */
     freeze: () => void;
+    /** 内容高度变化后重新布局，保留用户已经拖好的高度 */
+    relayout: () => void;
     dispose: () => void;
 }
 
@@ -126,9 +155,8 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     const element = options.dialog.element;
     const overlay = element.querySelector<HTMLElement>(".b3-dialog");
     const sheet = element.querySelector<HTMLElement>(".b3-dialog__container");
-    const scrim = element.querySelector<HTMLElement>(".b3-dialog__scrim");
-    if (!overlay || !sheet || !scrim) {
-        return { freeze: () => undefined, dispose: () => undefined };
+    if (!overlay || !sheet) {
+        return { freeze: () => undefined, relayout: () => undefined, dispose: () => undefined };
     }
     const toolbar = document.getElementById("keyboardToolbar");
 
@@ -150,8 +178,6 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     let frozen = false;
     let preferred: number | undefined;
     let available = 0;
-    let fullHeight = window.innerHeight;
-    let landscape = window.innerWidth < window.innerHeight;
     let cancelOpen: (() => void) | undefined;
     let opening = false;
     let closeObserver: MutationObserver | undefined;
@@ -159,18 +185,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     let frameObserver: ResizeObserver | undefined;
 
     const isClosing = () => element.dataset.dialogClosing === "true";
-    const standardMax = () => getStandardMaxHeight(fullHeight, available);
-
-    const syncFullHeight = () => {
-        // 横竖屏各记一份完整高度，键盘压缩后的高度不能覆盖它
-        const nextLandscape = window.innerWidth < window.innerHeight;
-        if (nextLandscape !== landscape) {
-            landscape = nextLandscape;
-            fullHeight = window.innerHeight;
-            return;
-        }
-        fullHeight = Math.max(fullHeight, window.innerHeight);
-    };
+    const standardMax = () => getStandardMaxHeight(getFullHeight(), available);
 
     // 测量自然高度时临时展开滚动区，测量后恢复原有滚动位置
     const getBounds = () => {
@@ -206,7 +221,6 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
         if (disposed || !overlay.isConnected) {
             return;
         }
-        syncFullHeight();
         const viewport = viewportBounds();
         const bottom = toolbar && !toolbar.classList.contains("fn__none") ?
             Math.min(viewport.bottom, toolbar.getBoundingClientRect().top) : viewport.bottom;
@@ -267,7 +281,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
         opening = true;
         cancelOpen = waitForSheetViewport({
             height: () => Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight),
-            fullHeight: Math.max(window.innerHeight, fullHeight),
+            fullHeight: getFullHeight(),
             open: () => {
                 if (!element.isConnected || !element.classList.contains("b3-dialog--open")) {
                     return;
@@ -307,7 +321,6 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     const reset = () => {
         sheet.style.transition = "";
         sheet.style.transform = "";
-        scrim.style.opacity = "";
         clearGesture();
     };
     const findTouch = (touches: TouchList) => Array.from(touches).find(touch => touch.identifier === start?.id);
@@ -370,7 +383,6 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
         }
         const excess = result ? result.excess : Math.max(0, offset);
         sheet.style.transform = `translateY(${excess}px)`;
-        scrim.style.opacity = Math.max(0, 1 - excess / Math.max(sheet.clientHeight, 1)).toString();
         if (event.cancelable) {
             event.preventDefault();
         }
@@ -456,11 +468,11 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     window.visualViewport?.addEventListener("scroll", onViewportChange);
     window.screen.orientation?.addEventListener?.("change", onViewportChange);
     frameObserver = typeof ResizeObserver === "undefined" ? undefined :
-        new ResizeObserver(() => resize());
+        new ResizeObserver(onViewportChange);
     if (toolbar) {
         frameObserver?.observe(toolbar);
     }
-    layoutObserver = new MutationObserver(() => resize());
+    layoutObserver = new MutationObserver(onViewportChange);
     if (toolbar) {
         layoutObserver.observe(toolbar, { attributes: true, attributeFilter: ["class", "style"] });
     }
@@ -469,6 +481,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
 
     return {
         freeze,
+        relayout: resize,
         dispose: () => {
             if (disposed) {
                 return;
