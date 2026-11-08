@@ -32,6 +32,10 @@
 - 移动端抽屉需要思源 3.8.10-alpha.5 及以上，更早的版本是普通居中对话框。
 - 只读写这五个文件。
 
+## 集市趋势图表
+
+![Bazaar stats graph](https://siyuan-bazaar-stats-graph.sr1.cc.cd/api/chart/wmy2981/edit-ignore-files-siyuan?metrics=downloads,rating,ratings&range=all&area=true&lang=zh)
+
 ## 开发
 
 ```bash

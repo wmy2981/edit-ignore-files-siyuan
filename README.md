@@ -32,6 +32,10 @@ Edit the ignore files under SiYuan's `data/.siyuan/` in one line-numbered editor
 - The mobile bottom sheet needs SiYuan 3.8.10-alpha.5 or later; older versions get a normal centred dialog.
 - Only those five files are read or written.
 
+## Bazaar Stats Graph
+
+![Bazaar stats graph](https://siyuan-bazaar-stats-graph.sr1.cc.cd/api/chart/wmy2981/edit-ignore-files-siyuan?metrics=downloads,rating,ratings&range=all&area=true&lang=en)
+
 ## Development
 
 ```bash
