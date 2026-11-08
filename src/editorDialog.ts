@@ -309,6 +309,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     <button class="b3-button ${options.danger ? "b3-button--remove" : "b3-button--text"}">${escapeHtml(options.confirmText)}</button>
 </div>`,
                 width: mobile ? "92vw" : "520px",
+                containerClassName: "eds-confirm",
                 destroyCallback: () => {
                     removeKeydown();
                     if (confirmDialog === dialog) {
@@ -316,7 +317,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
                     }
                     settle(false);
                 },
-            });
+            } as DialogOptions as ConstructorParameters<typeof Dialog>[0]);
             const buttons = dialog.element.querySelectorAll<HTMLButtonElement>(".b3-dialog__action .b3-button");
             buttons[0].addEventListener("click", () => {
                 settle(false);
@@ -340,7 +341,8 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
             document.addEventListener("keydown", onKeydown, true);
             removeKeydown = () => document.removeEventListener("keydown", onKeydown, true);
             confirmDialog = dialog;
-            buttons[1].focus({ preventScroll: true });
+            // 焦点放在容器上，避免按钮一出现就带上 :focus 的底色；旧版宿主不会自己聚焦
+            (dialog.element.querySelector(".b3-dialog__container") as HTMLElement).focus({ preventScroll: true });
         });
 
     const load = async (name: IgnoreFileName) => {

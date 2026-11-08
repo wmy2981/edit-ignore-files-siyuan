@@ -4,6 +4,11 @@
   will-change: transform;
 }
 
+// 确认框把焦点放在容器上，旧版宿主没有给容器去掉轮廓
+.b3-dialog__container.eds-confirm {
+  outline: none;
+}
+
 .eds {
   display: flex;
   flex-direction: column;
@@ -67,7 +72,8 @@
   flex-shrink: 0;
   // 问题全部列出后在框内滚动；上限跟着对话框高度走，桌面与移动端都给编辑器留出空间
   max-height: min(40%, 160px);
-  overflow: auto;
+  // 宿主 .b3-label__text 用 !important 锁死 overflow: hidden，这里必须同样用 !important 才能滚动
+  overflow: auto !important;
   overscroll-behavior: contain;
   color: var(--b3-card-error-color, var(--b3-theme-error));
   font-size: 12px;

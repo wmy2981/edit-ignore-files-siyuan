@@ -29,7 +29,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - `src/lint.ts` — 按语法分发检查器，并把问题类型映射到文案 key。
 - `src/lintGitignore.ts` — gitignore 语法检查（syncignore / indexignore / embeddingignore）。
 - `src/lintSql.ts` — SQL 片段检查（searchignore / refsearchignore）。
-- `src/editorDialog.ts` — 对话框：文件切换、行号槽、说明与折叠指导、BOM 提示、问题列表、保存与关闭守卫。保存流程「重读比对 → 冲突确认 → 写入 → 回读校验」，期间文本框只读且拒绝关闭（`saving`）；读取目标文件期间同样只读（`loading`），读取完成前选回当前文件会取消这次切换。放弃修改的确认框是自建的（宿主 `confirm` 不能改按钮文案与样式）；`closed`（已决定关闭）与 `disposed`（DOM 已拆）分开。
+- `src/editorDialog.ts` — 对话框：文件切换、行号槽、说明与折叠指导、BOM 提示、问题列表、保存与关闭守卫。保存流程「重读比对 → 冲突确认 → 写入 → 回读校验」，期间文本框只读且拒绝关闭（`saving`）；读取目标文件期间同样只读（`loading`），读取完成前选回当前文件会取消这次切换。放弃修改的确认框是自建的（宿主 `confirm` 不能改按钮文案与样式），焦点放在对话框容器上，避免放弃按钮一出现就带上 `:focus` 底色；`closed`（已决定关闭）与 `disposed`（DOM 已拆）分开。
 - `src/fileSwitch.ts` — 文件切换的纯决策：读取期间选回当前文件要取消读取，不能当成重复操作后让旧结果继续生效。
 - `src/sheet.ts` / `src/sheetGesture.ts` — 移动端底部抽屉与它的纯函数手势计算。
 - `src/index.scss` — 全部样式，只作用在 `.eds*` / `.eds-dialog` 私有类上。
@@ -62,6 +62,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - 抽屉样式要 `mobile-sheet-layout` 与 `mobile-sheet-panel` 都在（3.8.10-alpha.5+）；探测不到就退回普通对话框。`mobile-sheet-panel--compact` 到 3.8.10-alpha.6 才有，缺它只影响极窄高度。
 - `minAppVersion` 为 `3.1.20`（`Dialog.containerClassName` 自 3.1.11 起）。`name` 必须与目录名、仓库名一致；不发布内核插件，因此没有 `kernels`；`disabledInPublish` 为 `true`。
 - `npm` 上 `siyuan` 类型包落后于宿主：`containerClassName`、`beforeClose`、`Setting.close` 都缺。只在用到处做窄类型，不做全局断言。
+- 宿主 `.b3-label__text` 用 `!important` 把 `overflow` 锁成 `hidden`；`.eds__lint` 同时带这个类，必须同样用 `!important` 才能滚动。
 - `assets/preview.html` 是真实界面的 1:1 还原（DOM 与 `src/editorDialog.ts` 一致），但不画隐藏节点：`.eds__lint` 占位保留、语法提示行不显示，关闭图标与八个缩放手柄不画。改界面要同步改它并重新渲染。
 
 ## 构建产物
