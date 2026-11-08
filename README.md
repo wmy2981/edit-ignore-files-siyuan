@@ -12,8 +12,8 @@ A SiYuan plugin that edits the data sync ignore list (`data/.siyuan/syncignore`)
 - Real SiYuan UI: the native `Dialog`, `b3-button` styles and bottom sheet are used as-is, no custom window chrome.
 - Line-numbered editor: line numbers stay aligned with the text, long lines scroll horizontally instead of wrapping.
 - Editing guide: one collapsed line in the panel that explains the syntax and shows an example; click it to expand.
-- Syntax errors only: rules that cannot work as written are reported (backslashes, a bare `!` with no rule, an unclosed character class). Style suggestions are not shown, and errors never block saving.
-- Saved by exact round trip: the file is read again before saving, written back byte-for-byte otherwise, and read again afterwards to verify what landed on disk. Lines written by other tools are preserved untouched.
+- Syntax errors only: rules that cannot work as written are reported (an invalid backslash escape, unbalanced parentheses, an unclosed bracket, a misplaced `+`, a bare `!` with no rule). Style suggestions are not shown, and errors never block saving.
+- Saved by exact round trip: the file is read again before saving, only the text you see is written, and it is read again afterwards to verify what landed on disk. Lines written by other tools are preserved untouched.
 - Unsaved changes are guarded: cancelling, clicking the scrim, pressing `Esc` or dragging the sheet down asks for confirmation first.
 - Mobile drawer identical to SiYuan's own: the same grip, the same viewport-based height, the same opening sequence and pull-to-dismiss thresholds, and it can be dragged taller.
 
@@ -45,6 +45,7 @@ SiYuan appends a few built-in rules itself (`/.siyuan/conf.json`, user guide dat
 - The file may be rewritten by SiYuan while it is loaded (the appearance isolation block is cleaned up before the rules are read). If that happens during editing, the plugin asks before overwriting those changes.
 - No rule repair and no backups: the text you see is exactly what gets written, so changes made by other tools or plugins survive.
 - The mobile bottom sheet needs SiYuan 3.8.10-alpha.5 or later, because that is where the host sheet styles were introduced. On older versions the editor is a normal centred dialog, and the mobile back gesture cannot be intercepted.
+- If the file starts with a UTF-8 BOM, saving removes it: the kernel does not strip the BOM and turns it into part of the first rule, which silently disables that rule. The editor shows a one-line notice when it happens.
 - The plugin only touches `data/.siyuan/syncignore`; it does not read or write anything else.
 
 ## Development
