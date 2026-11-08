@@ -15,10 +15,10 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 
 ## 模块
 
-- `src/index.ts` — 插件入口。只做一件事：把 `new Setting()` 挂到宿主的 `plugin.setting` 上，注册唯一一个设置项（按钮），点击打开编辑器；`onunload` 关闭可能还开着的编辑器。
-- `src/syncignore.ts` — 文件读写与轻量校验。读 `POST /api/file/getFile`（裸文本，失败是 HTTP 202 + JSON），写 `POST /api/file/putFile`（multipart）。**必须用裸 `fetch`**：`siyuan.fetchSyncPost` 会把响应当 JSON 解析，读文本文件时必然抛错。
-- `src/editorDialog.ts` — 对话框本体：行号槽、折叠指导、校验提示、保存/关闭守卫。保存流程是「重读比对 → 冲突确认 → 写入 → 回读校验」。
-- `src/sheet.ts` — 移动端底部抽屉。复用宿主已定义的抽屉样式类拿到原生外观与入场/退场过渡，抓手与拖拽手势自行实现（宿主 `bindBottomSheetDrag` 未导出，规则也禁止复制）。
+- `src/index.ts` — 插件入口。不创建 `Setting`，而是覆写原型的 `openSetting()`：宿主以「`plugin.setting` 存在或 `openSetting` 被覆写」判断插件有没有设置入口，所以点击插件列表里的「设置」会直接打开编辑器。必须是原型方法，写成实例属性会让旧版本判断失效。`onunload` 关闭可能还开着的编辑器。
+- `src/syncignore.ts` — 文件读写与语法检查。读 `POST /api/file/getFile`（裸文本，失败是 HTTP 202 + JSON），写 `POST /api/file/putFile`（multipart）。**必须用裸 `fetch`**：`siyuan.fetchSyncPost` 会把响应当 JSON 解析，读文本文件时必然抛错。
+- `src/editorDialog.ts` — 对话框本体：行号槽、折叠指导、语法错误列表、保存/关闭守卫。保存流程是「重读比对 → 冲突确认 → 写入 → 回读校验」。
+- `src/sheet.ts` — 移动端底部抽屉，按宿主规则实现：类名（`mobile-bottom-sheet-dialog` / `mobile-sheet-layout` / `mobile-bottom-sheet` / `mobile-sheet-panel`）、抓手（`b3-menu__title--root`）、56% 上限与 `chrome + 120px` 下限、入场前的视口等待、拖拽阈值与 scrim 淡出、松手后 300ms 点击抑制。
 - `src/index.scss` — 全部样式，颜色/圆角/间距只用 `--b3-*` 变量。类名 `.eds*` 与 `.eds-dialog` 都是本插件私有。
 
 ## manifest 约束
@@ -28,12 +28,15 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - 不发布内核插件，因此没有 `kernels` 字段。
 - `disabledInPublish` 为 `true`。
 
-## 已知限制
+## 已知限制与偏离
 
+- **抽屉是自建实现**：宿主的 `bindBottomSheetDialog` / `bindBottomSheetDrag` / `mobileSheetLayout` 未导出给插件，`src/sheet.ts` 按同样的规则自行实现，以便动画与拖拽手感与宿主一致。这偏离了「不要复制宿主抽屉实现」的默认规则，属于本项目的明确选择；宿主改版后需要按源码重新核对。
+- 入场沿用宿主做法，会在手势/入场期间临时写内联 `transition` 并强制一次重排（`void sheet.offsetHeight`），这与「不接管动画时序」的默认规则相反，同样是刻意为之。
 - `Dialog.beforeClose` 直到 3.8.9 才存在。旧版本上「未保存修改」的确认由插件自己拦截遮罩点击与 `Esc` 提供，移动端返回手势无法拦截。
-- `data/.siyuan/syncignore` 的路径在 3.0.0 之后稳定，但插件没有任何内核专用接口可用，全部走原始文件 API；内核没有 syncignore 的读写 API。
-- 移动端抽屉样式只在 3.8.10-alpha.5 及以上存在。插件用一次性样式表探测判断，探测不到就退回普通对话框（并因此不画抓手、不绑定拖拽）。
+- 内核没有 syncignore 的读写接口，全部走原始文件 API。
+- 抽屉样式只在 3.8.10-alpha.5 及以上存在。插件用一次性样式表探测判断，探测不到就退回普通对话框（不画抓手、不绑定拖拽）。
 - `npm` 上 `siyuan` 类型包落后于宿主实现：`containerClassName`、`beforeClose`、`Setting.close` 都缺。只在 `src/editorDialog.ts` 里做了一处窄类型扩展，没有扩散成全局断言。
+- 语法检查只报「规则写法本身失效」的三类问题：反斜杠、只有 `!`、字符类未闭合。缺前导 `/`、重复行、行尾空白都不提示；规则是否命中文件由内核判定，插件不实现匹配引擎。
 - `assets/preview.html` 是插件真实界面的 1:1 还原（DOM 与 `src/editorDialog.ts` 一致，样式取自思源 dialog/button 规则与本插件 SCSS）。改界面时要同步改它并重新渲染。
 
 ## 构建产物

@@ -8,19 +8,19 @@ A SiYuan plugin that edits the data sync ignore list (`data/.siyuan/syncignore`)
 
 ## Features
 
-- One setting only: a button in the plugin settings panel that opens the editor; nothing else is registered.
-- Real SiYuan UI: the native `Dialog` and `b3-button` styles are used as-is, no custom window chrome.
+- One click to edit: the `Settings` icon in the plugin list opens the editor directly, there is no extra settings panel.
+- Real SiYuan UI: the native `Dialog`, `b3-button` styles and bottom sheet are used as-is, no custom window chrome.
 - Line-numbered editor: line numbers stay aligned with the text, long lines scroll horizontally instead of wrapping.
 - Editing guide: one collapsed line in the panel that explains the syntax and shows an example; click it to expand.
-- Light syntax hints: rules without a leading `/`, backslashes, duplicated lines and trailing whitespace are listed under the guide. Hints never block saving.
+- Syntax errors only: rules that cannot work as written are reported (backslashes, a bare `!` with no rule, an unclosed character class). Style suggestions are not shown, and errors never block saving.
 - Saved by exact round trip: the file is read again before saving, written back byte-for-byte otherwise, and read again afterwards to verify what landed on disk. Lines written by other tools are preserved untouched.
 - Unsaved changes are guarded: cancelling, clicking the scrim, pressing `Esc` or dragging the sheet down asks for confirmation first.
-- Mobile drawer: on SiYuan 3.8.10-alpha.5 and later the editor is presented as a real bottom sheet with the grip, drag-to-resize and drag-to-dismiss. Earlier versions, and desktop, show a regular dialog.
+- Mobile drawer identical to SiYuan's own: the same grip, the same viewport-based height, the same opening sequence and pull-to-dismiss thresholds, and it can be dragged taller.
 
 ## Usage
 
-1. Open `Settings → Marketplace → Downloaded → Edit Sync Ignore → Settings`.
-2. Click `Edit ignore rules`.
+1. Open `Settings → Marketplace → Downloaded → Edit Sync Ignore`.
+2. Click the `Settings` icon of that entry; the editor opens.
 3. Edit the rules, then click `Save`.
 
 ## Rule syntax
@@ -47,17 +47,16 @@ SiYuan appends a few built-in rules itself (`/.siyuan/conf.json`, user guide dat
 - The mobile bottom sheet needs SiYuan 3.8.10-alpha.5 or later, because that is where the host sheet styles were introduced. On older versions the editor is a normal centred dialog, and the mobile back gesture cannot be intercepted.
 - The plugin only touches `data/.siyuan/syncignore`; it does not read or write anything else.
 
-## Manual verification
-
-Static checks (no SiYuan instance needed):
+## Development
 
 ```bash
-npm ci
-npm run typecheck
-npm run build
+npm ci              # install dependencies
+npm run typecheck   # type checking
+npm run build       # production build, writes dist/ and package.zip
+npm run dev         # watch build
+npm run render:icon # assets/icon.svg → assets/icon.png
+npm run render:preview # assets/preview.html → assets/preview.png
 ```
-
-Runtime check in a scratch workspace: open the plugin settings, click the button, edit a rule, save, then confirm the file content on disk and that the rules affect the next sync. Mobile: repeat on a phone and check that the sheet opens, can be dragged taller, pulled down to dismiss, and that unsaved edits are confirmed.
 
 ## License
 
