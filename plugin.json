@@ -1,0 +1,42 @@
+{
+  "name": "edit-syncignore-siyuan",
+  "author": "wmy2981",
+  "url": "https://github.com/wmy2981/edit-syncignore-siyuan",
+  "version": "0.1.0",
+  "minAppVersion": "3.1.20",
+  "backends": [
+    "all"
+  ],
+  "frontends": [
+    "all"
+  ],
+  "displayName": {
+    "default": "Edit Sync Ignore",
+    "zh-CN": "编辑同步忽略"
+  },
+  "description": {
+    "default": "Edit the sync ignore list (data/.siyuan/syncignore) with a line-numbered editor.",
+    "zh-CN": "用带行号的编辑器编辑同步忽略列表（data/.siyuan/syncignore）。"
+  },
+  "readme": {
+    "default": "README.md",
+    "zh-CN": "README.zh-CN.md"
+  },
+  "funding": {
+    "custom": [
+      "https://afdian.com/a/wmy2981"
+    ]
+  },
+  "keywords": [
+    "syncignore",
+    "sync",
+    "同步忽略",
+    "忽略规则",
+    "gitignore",
+    "exclude",
+    "排除"
+  ],
+  "icon": "icon.png",
+  "preview": "preview.png",
+  "disabledInPublish": true
+}
