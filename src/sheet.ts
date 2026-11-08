@@ -9,13 +9,13 @@
 //   - 拖拽：整块面板都能起手（输入框、按钮等除外），只有从抓手起手才改高度，其余是下拉位移；
 //   - 关闭：excess 超过 min(120px, 下限 × 25%)，或下拉超过 20px 且速度大于 0.6px/ms。
 import type {Dialog} from "siyuan";
+import { getSheetBounds, getStandardMaxHeight, moveSheetGesture, shouldCloseSheet } from "./sheetGesture";
+import type { SheetGesture } from "./sheetGesture";
 
 const GRIP_CLASS = "b3-menu__title b3-menu__title--root";
 // 与宿主一致：可交互元素和拖拽元素上的手势不归抽屉处理
 const EXCLUDE_SELECTOR = 'input, textarea, select, button, [contenteditable="true"], .protyle, ' +
     '.block__icon, .b3-dialog__close, [draggable="true"]';
-const MIN_SHEET_GAP = 120;
-const STANDARD_RATIO = 0.56;
 const CROSS_AXIS_TOLERANCE = 4;
 
 type HostWindow = Window & { siyuan?: { config?: { system?: { container?: string } } } };
@@ -122,15 +122,6 @@ export interface SheetHandle {
     dispose: () => void;
 }
 
-interface SheetGesture {
-    height: number;
-    min: number;
-    max: number;
-    offset: number;
-    time: number;
-    phaseStart?: number;
-}
-
 export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     const element = options.dialog.element;
     const overlay = element.querySelector<HTMLElement>(".b3-dialog");
@@ -168,7 +159,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     let frameObserver: ResizeObserver | undefined;
 
     const isClosing = () => element.dataset.dialogClosing === "true";
-    const standardMax = () => Math.min(available, Math.max(0, fullHeight) * STANDARD_RATIO);
+    const standardMax = () => getStandardMaxHeight(fullHeight, available);
 
     const syncFullHeight = () => {
         // 横竖屏各记一份完整高度，键盘压缩后的高度不能覆盖它
@@ -208,10 +199,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
             node.scrollTop = top;
             node.scrollLeft = left;
         });
-        return {
-            min: Math.min(Math.max(0, Math.min(natural, chrome + MIN_SHEET_GAP, available)), Math.max(chrome, standardMax())),
-            max: Math.max(0, available),
-        };
+        return getSheetBounds(natural, chrome, available, standardMax());
     };
 
     const resize = () => {
@@ -256,27 +244,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
         frozen = true;
     };
 
-    const changeGesture = (state: SheetGesture, offset: number) => {
-        const time = performance.now();
-        const requested = state.height - offset;
-        const excess = Math.max(0, state.min - requested);
-        if (!excess) {
-            state.phaseStart = undefined;
-        } else if (state.phaseStart === undefined) {
-            const boundary = state.height - state.min;
-            const distance = offset - state.offset;
-            const fraction = distance > 0 ? Math.max(0, Math.min(1, (boundary - state.offset) / distance)) : 1;
-            state.phaseStart = state.time + (time - state.time) * fraction;
-        }
-        state.offset = offset;
-        state.time = time;
-        const speed = state.phaseStart === undefined || time <= state.phaseStart ? 0 : excess / (time - state.phaseStart);
-        return {
-            height: Math.max(state.min, Math.min(state.max, requested)),
-            excess,
-            close: excess > Math.min(120, state.min * .25) || (excess > 20 && speed > .6),
-        };
-    };
+    const changeGesture = (state: SheetGesture, offset: number) => moveSheetGesture(state, offset, performance.now());
 
     // ---- 入场：与宿主一致，先移出视口并隐藏，视口稳定后再展开 ----
     sheet.style.transition = "none";
@@ -429,8 +397,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
             return;
         }
         const duration = Math.max(performance.now() - start.time, 1);
-        const shouldClose = result ? result.close : offset > Math.min(120, sheet.clientHeight * .25) ||
-            (offset > 20 && offset / duration > .6);
+        const shouldClose = shouldCloseSheet(result, offset, duration, sheet.clientHeight);
         // 拖动结束后抑制随后的点击，避免松手即触发按钮
         suppressClickUntil = performance.now() + 300;
         void sheet.offsetHeight;
