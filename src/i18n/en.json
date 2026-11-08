@@ -21,7 +21,9 @@
   "lintInvalidEscape": "Line {line} has an invalid backslash escape, the kernel skips this rule",
   "lintUnclosedClass": "Line {line} has an unclosed [, the kernel skips this rule",
   "lintUnbalancedGroup": "Line {line} has unbalanced parentheses, the kernel skips this rule",
-  "lintBadRepetition": "Line {line} misuses +, the kernel skips this rule",
+  "lintBadRepetition": "Line {line} misuses + or {…}, the kernel skips this rule",
+  "lintStarInClass": "Line {line} has a * inside a character class, the kernel skips this rule",
+  "lintBadClassRange": "Line {line} has a reversed character class range, the kernel skips this rule",
   "lintEmptyNegation": "Line {line} is only ! with no rule, which cancels every earlier rule",
   "lintMore": "{count} more lines make the kernel skip rules"
 }

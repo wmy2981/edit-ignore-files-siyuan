@@ -30,6 +30,8 @@ const LINT_KEYS: Record<LintIssue["kind"], string> = {
     unclosedClass: "lintUnclosedClass",
     unbalancedGroup: "lintUnbalancedGroup",
     badRepetition: "lintBadRepetition",
+    starInClass: "lintStarInClass",
+    badClassRange: "lintBadClassRange",
 };
 
 let openedDialog: Dialog | undefined;
@@ -89,6 +91,9 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     let read: ReadResult;
     try {
         read = await readSyncIgnore();
+    } catch (error) {
+        showMessage(format(t("readFailed"), { msg: String(error) }), 6000, "error");
+        return;
     } finally {
         // 读盘结束就放开标志，后面是同步创建对话框，不会重复打开
         opening = false;
@@ -103,9 +108,12 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     }
     const initial = read.snapshot;
     const mobile = isMobileFrontend();
+    // disposed 表示 DOM 已拆，closed 表示已经决定关闭（含销毁动画期间）
     let disposed = false;
+    let closed = false;
     let allowed = false;
     let confirming = false;
+    let saving = false;
     let lintTimer = 0;
 
     // 内核不剥 BOM，带 BOM 的文件第一条规则会失效；保存时统一不写回 BOM
@@ -148,7 +156,11 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         // 关闭入口统一由插件自己提供，桌面端本来就不显示这个图标
         hideCloseIcon: true,
         beforeClose: () => {
-            if (allowed || !isDirty()) {
+            if (allowed) {
+                sheetHandle?.freeze();
+                return true;
+            }
+            if (!saving && !isDirty()) {
                 allowed = true;
                 sheetHandle?.freeze();
                 return true;
@@ -158,6 +170,13 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         },
         destroyCallback: () => {
             disposed = true;
+            closed = true;
+            // 宿主发起的关闭（移动端返回手势、旧版本上的宿主 Esc）不经过 disposeDialog，
+            // 这里必须自己放开模块级引用，否则编辑器再也打不开
+            if (openedDialog === dialog) {
+                openedDialog = undefined;
+                closeActiveEditor = undefined;
+            }
             window.clearTimeout(lintTimer);
             document.removeEventListener("keydown", onKeydown, true);
             dialog.element.removeEventListener("click", onScrimClick, true);
@@ -177,6 +196,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
 
     // 关闭时先放开模块级引用，销毁动画期间的点击不会被过期的对话框挡住
     const disposeDialog = () => {
+        closed = true;
         openedDialog = undefined;
         closeActiveEditor = undefined;
         dialog.destroy();
@@ -214,7 +234,8 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     };
 
     const requestClose = async (): Promise<boolean> => {
-        if (disposed) {
+        // 保存期间不接受关闭：写入已经开始，关上界面只会让落盘内容与用户看到的不一致
+        if (closed || saving) {
             return false;
         }
         if (allowed || !isDirty()) {
@@ -229,7 +250,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         confirming = true;
         const discard = await askConfirm(t("discardTitle"), t("discardText"));
         confirming = false;
-        if (!discard || disposed) {
+        if (!discard || closed) {
             return false;
         }
         allowed = true;
@@ -264,42 +285,51 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     };
 
     const save = async () => {
-        if (disposed) {
+        if (closed || saving) {
             return;
         }
+        saving = true;
         saveButton.disabled = true;
         // 保存期间锁住编辑，避免落盘内容与界面上看到的文本不一致
         textarea.readOnly = true;
         try {
             const text = textarea.value;
             const current = await readSyncIgnore();
+            // 每个 await 之后都要重新确认对话框还在，否则会往已经关闭的会话里写文件
+            if (closed) {
+                return;
+            }
             if (!current.ok) {
                 showMessage(format(t("readFailed"), { msg: current.message }), 6000, "error");
                 return;
             }
             if (current.snapshot.text !== initial.text) {
                 const overwrite = await askConfirm(t("conflictTitle"), t("conflictText"));
-                if (!overwrite || disposed) {
+                if (!overwrite || closed) {
                     return;
                 }
             }
             const written = await writeSyncIgnore(text);
+            if (closed) {
+                return;
+            }
             if (!written.ok) {
                 showMessage(format(t("saveFailed"), { msg: written.message }), 6000, "error");
                 return;
             }
             const verify = await readSyncIgnore();
-            if (!verify.ok || verify.snapshot.text !== text) {
-                showMessage(t("saveUnverified"), 6000, "error");
+            if (closed) {
                 return;
             }
-            if (disposed) {
+            if (!verify.ok || verify.snapshot.text !== text) {
+                showMessage(t("saveUnverified"), 6000, "error");
                 return;
             }
             showMessage(t("saved"), 2000);
             allowed = true;
             disposeDialog();
         } finally {
+            saving = false;
             if (!disposed) {
                 saveButton.disabled = false;
                 textarea.readOnly = false;

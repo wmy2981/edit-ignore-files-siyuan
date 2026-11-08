@@ -26,6 +26,8 @@
         --b3-border-radius-b: 12px;
         --b3-mask-background: rgba(220, 220, 220, .4);
         --b3-card-warning-color: #8a4f00;
+        --b3-card-error-color: #b3261e;
+        --b3-theme-error: #b3261e;
         --b3-dialog-shadow: 0 8px 24px rgba(0, 0, 0, .2);
         --b3-list-hover: rgba(0, 0, 0, .075);
         --b3-button-shadow: 0 1px 2px 0 rgb(0 0 0 / .3), 0 1px 3px 1px rgb(0 0 0 / .15);
@@ -196,13 +198,25 @@
         line-height: 18px;
     }
 
+    .eds__notice {
+        flex-shrink: 0;
+        color: var(--b3-card-warning-color, var(--b3-theme-on-surface));
+        font-size: 12px;
+        line-height: 18px;
+    }
+
     .eds__lint {
         flex-shrink: 0;
         max-height: 84px;
         overflow: auto;
-        color: var(--b3-card-warning-color, var(--b3-theme-on-surface));
+        color: var(--b3-card-error-color, var(--b3-theme-error));
         font-size: 12px;
         line-height: 18px;
+        will-change: transform;
+    }
+
+    .eds__lint[hidden] {
+        display: none;
     }
 
     .eds__editor {
@@ -252,6 +266,14 @@
         color: var(--b3-theme-on-background);
         white-space: pre;
         overflow: auto;
+        will-change: transform;
+        font-size: 16px;
+    }
+
+    @media (min-width: 721px) {
+        .eds__textarea {
+            font-size: 13px;
+        }
     }
 </style>
 </head>
@@ -273,6 +295,7 @@
                         <li>文件里可能包含其他工具写入的规则，本插件不会自动调整它们；保存后规则在下次同步时生效。</li>
                     </ul>
                 </details>
+                <div class="eds__lint b3-label__text" hidden></div>
                 <div class="eds__editor">
                     <div class="eds__gutter" aria-hidden="true"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div></div>
                     <textarea class="eds__textarea" wrap="off" spellcheck="false" placeholder="每行一条规则，例如 /assets/*.pdf"># 忽略附件里的 PDF 与临时目录

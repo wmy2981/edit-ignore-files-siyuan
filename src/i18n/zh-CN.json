@@ -21,7 +21,9 @@
   "lintInvalidEscape": "第 {line} 行的反斜杠转义无效，内核会跳过这条规则",
   "lintUnclosedClass": "第 {line} 行的 [ 没有闭合，内核会跳过这条规则",
   "lintUnbalancedGroup": "第 {line} 行的圆括号不成对，内核会跳过这条规则",
-  "lintBadRepetition": "第 {line} 行的 + 位置不对，内核会跳过这条规则",
+  "lintBadRepetition": "第 {line} 行的 + 或 {…} 重复写法不对，内核会跳过这条规则",
+  "lintStarInClass": "第 {line} 行的字符类里有 *，内核会跳过这条规则",
+  "lintBadClassRange": "第 {line} 行的字符类范围反了，内核会跳过这条规则",
   "lintEmptyNegation": "第 {line} 行只有 ! 却没有规则，会取消前面所有忽略规则",
   "lintMore": "还有 {count} 处写法会让内核跳过规则"
 }

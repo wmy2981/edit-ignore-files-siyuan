@@ -28,16 +28,23 @@ describe("lintSyncIgnore", () => {
     });
 
     test("accepts escapes the kernel can compile", () => {
-        // \! \# \] \[ \* \+ 与 \p{L} 都能编译，只是改变含义，不算失效
-        const text = ["/a\\!b", "/a\\#b", "/a\\]b", "/a\\[b", "/a\\*b", "/a\\+b", "/a\\p{L}"].join("\n");
+        // \! \# \] \[ \* \+ 都能编译，只是改变含义，不算失效
+        const text = ["/a\\!b", "/a\\#b", "/a\\]b", "/a\\[b", "/a\\*b", "/a\\+b"].join("\n");
         assert.deepEqual(lintSyncIgnore(text), []);
     });
 
     test("accepts a backslash that forms a valid regex escape", () => {
-        // \b、\d、\s 之类是合法转义（词边界、数字、空白），规则本身仍会编译
+        // \b、\d、\s 是合法转义（词边界、数字、空白），规则本身仍会编译
         assert.deepEqual(lintSyncIgnore("/a\\bb"), []);
         assert.deepEqual(lintSyncIgnore("/a\\db"), []);
         assert.deepEqual(lintSyncIgnore("/assets\\*.pdf"), []);
+    });
+
+    test("accepts hex, octal, unicode class and quoted escapes", () => {
+        // 这些写法 RE2 都接受，不能报
+        const text = ["/a\\x41b", "/a\\x{41}b", "/a\\12b", "/a\\123b", "/a\\0b",
+            "/a\\p{L}b", "/a\\pLb", "/a\\Q*\\Eb", "/\\Q\\E", "/a\\Q[b", "/a\\Q(b"].join("\n");
+        assert.deepEqual(lintSyncIgnore(text), []);
     });
 
     test("reports an escape the kernel rejects", () => {
@@ -45,6 +52,9 @@ describe("lintSyncIgnore", () => {
         assert.deepEqual(lintSyncIgnore("/a\\yb"), [{ line: 1, kind: "invalidEscape" }]);
         assert.deepEqual(lintSyncIgnore("/a\\cb"), [{ line: 1, kind: "invalidEscape" }]);
         assert.deepEqual(lintSyncIgnore("/a\\1b"), [{ line: 1, kind: "invalidEscape" }]);
+        assert.deepEqual(lintSyncIgnore("/a\\8b"), [{ line: 1, kind: "invalidEscape" }]);
+        assert.deepEqual(lintSyncIgnore("/a\\xb"), [{ line: 1, kind: "invalidEscape" }]);
+        assert.deepEqual(lintSyncIgnore("/a\\pb"), [{ line: 1, kind: "invalidEscape" }]);
         assert.deepEqual(lintSyncIgnore("/a\\中b"), [{ line: 1, kind: "invalidEscape" }]);
     });
 
@@ -87,6 +97,35 @@ describe("lintSyncIgnore", () => {
         // 加号本身是合法量词，只有位置不对才失效
         assert.deepEqual(lintSyncIgnore("/assets/a+b"), []);
         assert.deepEqual(lintSyncIgnore("/assets/a\\+b"), []);
+    });
+
+    test("reports repeat counts RE2 refuses", () => {
+        assert.deepEqual(lintSyncIgnore("/a{2,1}b"), [{ line: 1, kind: "badRepetition" }]);
+        assert.deepEqual(lintSyncIgnore("/a{1001}b"), [{ line: 1, kind: "badRepetition" }]);
+        assert.deepEqual(lintSyncIgnore("/a{1,2}+b"), [{ line: 1, kind: "badRepetition" }]);
+        assert.deepEqual(lintSyncIgnore("/a{2}b"), []);
+        assert.deepEqual(lintSyncIgnore("/a{1,2}b"), []);
+        assert.deepEqual(lintSyncIgnore("/a{,2}b"), []);
+        assert.deepEqual(lintSyncIgnore("/a{b}"), []);
+    });
+
+    test("reports a star inside a character class", () => {
+        // 内核把 * 换成 ([^/]*)，字符类会被切断，整条规则失效
+        assert.deepEqual(lintSyncIgnore("/a[*]b"), [{ line: 1, kind: "starInClass" }]);
+        assert.deepEqual(lintSyncIgnore("/a[a*b]c"), [{ line: 1, kind: "starInClass" }]);
+        assert.deepEqual(lintSyncIgnore("/a*b"), []);
+    });
+
+    test("reports a reversed character class range", () => {
+        assert.deepEqual(lintSyncIgnore("/[z-a]"), [{ line: 1, kind: "badClassRange" }]);
+        assert.deepEqual(lintSyncIgnore("/a[9-1]b"), [{ line: 1, kind: "badClassRange" }]);
+        // 上界是单字符转义时按转义后的字符比较
+        assert.deepEqual(lintSyncIgnore("/a[z-\\]]b"), [{ line: 1, kind: "badClassRange" }]);
+        assert.deepEqual(lintSyncIgnore("/a[a-z]b"), []);
+        assert.deepEqual(lintSyncIgnore("/a[-z]b"), []);
+        assert.deepEqual(lintSyncIgnore("/a[z-]b"), []);
+        // 多字符转义（\d、\x41）不做范围比较
+        assert.deepEqual(lintSyncIgnore("/a[z-\\d]b"), []);
     });
 
     test("ignores comments and blank lines", () => {

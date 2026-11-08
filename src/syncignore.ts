@@ -83,7 +83,8 @@ export const writeSyncIgnore = async (text: string): Promise<WriteResult> => {
     return { ok: true, message: "" };
 };
 
-export type LintKind = "emptyNegation" | "invalidEscape" | "unclosedClass" | "unbalancedGroup" | "badRepetition";
+export type LintKind = "emptyNegation" | "invalidEscape" | "unclosedClass" | "unbalancedGroup" |
+    "badRepetition" | "starInClass" | "badClassRange";
 
 export interface LintIssue {
     /** 1 起始的行号 */
@@ -93,28 +94,59 @@ export interface LintIssue {
 
 // 内核用 sabhiram/go-gitignore 把每条规则转成正则再编译，编译失败的规则会被静默丢弃。
 // 转换时只有 `*` 变成 `([^/]*)`、`.` 和 `?` 被转义，其余字符原样进正则，
-// 所以下面这些写法会让整条规则失效（取值来自 20210923 版源码与 RE2 实测）：
-// - `\` 后面是 RE2 不接受的字符（非 ASCII 以外的标点都合法，字母只认 abdfnrstvwzABDQSW，
-//   1-9 与其它字母都不合法），或者 `\` 在行尾；
-// - `[` 没有闭合；
-// - 圆括号不成对；
-// - `+` 紧跟在 `+`、`(`、`|` 后面。
-// 反过来 `\!`、`\#`、`\]`、`\*`、`a\b`（这个词边界）都能编译，只改变含义而不失效，不报。
+// 所以下面这些写法会让整条规则失效（结论来自 20210923 版源码与 RE2 实测）：
+// - 反斜杠转义非法：`\` 在行尾、`\` 后接不认识的字母/数字/非 ASCII 字符；
+// - `[` 没有闭合；圆括号不成对；
+// - `+` 紧跟在 `+`、`(`、`|` 后面，或 `{…}` 的重复次数非法、`{…}` 后面又接 `+`；
+// - 字符类里出现 `*`（内核会把它替换成 `([^/]*)`，把字符类切断）；
+// - 字符类的范围反了，如 `[z-a]`。
+// 反过来 `\!`、`\#`、`\]`、`\*`、`a\b`（词边界）、`\p{L}`、`\Q…\E` 都能编译，只改变含义而不失效，不报。
 const ESCAPE_LETTERS = "abdfnrstvwzABDQSW";
+// \p 允许的单字母类别名，其余写法要带 {…}
+const UNICODE_CATEGORIES = "LMNPSZC";
 
-const isAllowedEscape = (char: string, after: string | undefined) => {
-    // \p{L} / \pL 这类 Unicode 类只有带上类名时才有效
-    if ((char === "p" || char === "P") && after !== undefined && /[A-Za-z{]/.test(after)) {
-        return true;
+/** 读一个转义序列，返回它占用的字符数（含反斜杠）；不合法返回 0。 */
+const readEscape = (rule: string, index: number): number => {
+    const char = rule[index + 1];
+    if (char === undefined) {
+        return 0;
     }
-    if (char.charCodeAt(0) >= 0x80) {
-        return false;
+    if (char === "Q") {
+        // \Q…\E 之间全是字面量，不参与任何语法判断
+        const end = rule.indexOf("\\E", index + 2);
+        return end === -1 ? rule.length - index : end + 2 - index;
+    }
+    if (char === "x") {
+        const braced = /^\{[0-9A-Fa-f]+\}/.exec(rule.slice(index + 2));
+        if (braced) {
+            return 2 + braced[0].length;
+        }
+        return /^[0-9A-Fa-f]{2}/.test(rule.slice(index + 2)) ? 4 : 0;
+    }
+    if (char === "p" || char === "P") {
+        const braced = /^\{[A-Za-z_ -]+\}/.exec(rule.slice(index + 2));
+        if (braced) {
+            return 2 + braced[0].length;
+        }
+        const category = rule[index + 2];
+        return category !== undefined && UNICODE_CATEGORIES.includes(category) ? 3 : 0;
+    }
+    if (/[0-7]/.test(char)) {
+        // \0 单独有效，其余八进制转义至少要两位
+        const digits = /^[0-7]+/.exec(rule.slice(index + 1))?.[0] ?? "";
+        return digits.length >= 2 || char === "0" ? 1 + digits.length : 0;
+    }
+    if (/[89]/.test(char)) {
+        return 0;
     }
     if (/[A-Za-z]/.test(char)) {
-        return ESCAPE_LETTERS.includes(char);
+        return ESCAPE_LETTERS.includes(char) ? 2 : 0;
     }
-    return !/[1-9]/.test(char);
+    // 标点与空格都是合法的字面量转义，非 ASCII 不是
+    return char.charCodeAt(0) >= 0x80 ? 0 : 2;
 };
+
+const isAlnum = (char: string | undefined) => char !== undefined && /^[0-9A-Za-z]$/.test(char);
 
 /** 返回这一行会让内核丢掉规则的写法，没有则返回 null。 */
 const lintRule = (rule: string): LintKind | null => {
@@ -122,34 +154,64 @@ const lintRule = (rule: string): LintKind | null => {
     let inClass = false;
     // 字符类里已读的内容长度，用来识别 `[ ]]` 这种紧跟开头的字面 `]`
     let classLength = 0;
+    let classPrevious = "";
     // 上一个未转义字符，用来判断 `+` 前面是不是无法重复的位置
     let previous = "";
     for (let index = 0; index < rule.length; index++) {
         const char = rule[index];
         if (char === "\\") {
-            const escaped = rule[index + 1];
-            if (escaped === undefined || !isAllowedEscape(escaped, rule[index + 2])) {
+            const length = readEscape(rule, index);
+            if (!length) {
                 return "invalidEscape";
             }
             // 被转义的字符不再参与括号、字符类和重复的判断
-            index++;
+            index += length - 1;
             previous = "";
-            classLength++;
+            classPrevious = "";
+            if (inClass) {
+                classLength++;
+            }
             continue;
         }
         if (inClass) {
-            if (char !== "]") {
-                classLength++;
-            } else if (classLength === 0) {
-                classLength++;
-            } else {
-                inClass = false;
+            if (char === "]") {
+                if (classLength === 0) {
+                    classLength++;
+                } else {
+                    inClass = false;
+                }
+                continue;
             }
+            if (char === "*") {
+                return "starInClass";
+            }
+            if (char === "-" && isAlnum(classPrevious)) {
+                // 范围的上界可能是单字符转义（如 \]），多字符转义（\d、\x41）不判断
+                const next = rule[index + 1];
+                let bound: string | undefined;
+                if (next === "\\") {
+                    const escaped = rule[index + 2];
+                    if (escaped !== undefined && !/[A-Za-z0-9]/.test(escaped)) {
+                        bound = escaped;
+                    }
+                } else if (next !== undefined && next !== "]" && next !== "[") {
+                    bound = next;
+                }
+                if (bound !== undefined) {
+                    const code = bound.charCodeAt(0);
+                    if (code >= 0x20 && code <= 0x7e && classPrevious > bound) {
+                        return "badClassRange";
+                    }
+                }
+            }
+            classPrevious = char;
+            classLength++;
             continue;
         }
         if (char === "[") {
             inClass = true;
             classLength = 0;
+            classPrevious = "";
             previous = "";
         } else if (char === "(") {
             openGroup++;
@@ -165,6 +227,21 @@ const lintRule = (rule: string): LintKind | null => {
                 return "badRepetition";
             }
             previous = char;
+        } else if (char === "{") {
+            const repeat = /^\{(\d+)(?:,(\d*))?\}/.exec(rule.slice(index));
+            if (repeat) {
+                const min = Number(repeat[1]);
+                const max = repeat[2] === undefined || repeat[2] === "" ? undefined : Number(repeat[2]);
+                // RE2 的重复上限是 1000，下限不能大于上限，重复后面不能再接重复
+                if ((max !== undefined && min > max) || min > 1000 ||
+                    (max !== undefined && max > 1000) || rule[index + repeat[0].length] === "+") {
+                    return "badRepetition";
+                }
+                index += repeat[0].length - 1;
+                previous = "}";
+            } else {
+                previous = char;
+            }
         } else {
             previous = char;
         }
@@ -177,6 +254,7 @@ const lintRule = (rule: string): LintKind | null => {
 
 /**
  * 只报「内核会静默丢弃这条规则」的写法，不做风格建议（缺前导斜杠、重复行、行尾空白一律不提示）。
+ * 少数依赖 Unicode 名称表的写法（如 `\p{Zzz}` 里拼错的类别名）与字符类里的转义范围不在覆盖范围内。
  * 规则是否真的命中文件由内核在同步时判定，这里不实现匹配引擎。
  */
 export const lintSyncIgnore = (text: string): LintIssue[] => {
