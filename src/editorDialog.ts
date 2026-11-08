@@ -1,17 +1,24 @@
-// 编辑同步忽略文件的对话框：带行号的文本编辑器 + 折叠起来的编辑指导 + 轻量语法提示。
+// 编辑忽略文件的对话框：文件切换 + 带行号的文本编辑器 + 按语法折叠的编辑说明 + 轻量语法提示。
 //
 // 关闭与保存的约束：
-// - 有未保存改动时，取消、点遮罩、按 Esc、拖动下拉都必须先确认；
+// - 有未保存改动时，切换文件、取消、点遮罩、按 Esc、拖动下拉都必须先确认；
 // - 保存前重读文件比对，内核可能在我们编辑期间改写它（加载规则前会做外观隔离块清理）；
 // - 保存后回读校验，确认落盘内容与编辑器一致。
 import { Dialog, confirm, getFrontend, showMessage } from "siyuan";
+import { DEFAULT_IGNORE_FILE, IGNORE_FILES, getIgnoreSyntax, isIgnoreFileName } from "./ignoreFiles";
+import type { IgnoreFileName } from "./ignoreFiles";
+import { readIgnoreFile, writeIgnoreFile } from "./ignoreFile";
+import type { ReadResult } from "./ignoreFile";
+import { LINT_KEYS, lintIgnore } from "./lint";
+import type { LintIssue } from "./lint";
 import { bindMobileBottomSheet, hasHostBottomSheetStyles } from "./sheet";
 import type { SheetHandle } from "./sheet";
-import { lintSyncIgnore, readSyncIgnore, writeSyncIgnore } from "./syncignore";
-import type { LintIssue, ReadResult } from "./syncignore";
 
 const LINT_LIMIT = 5;
 const LINT_DELAY = 150;
+const GUIDE_ITEM_COUNT = 4;
+/** 上次编辑的文件，下次打开直接回到它 */
+const ACTIVE_STORAGE_KEY = "edit-ignore-files/active";
 
 // 宿主随 npm 发布的类型声明落后于实际实现：containerClassName 自 3.1.11 起可用、
 // beforeClose 自 3.8.9 起可用（更早的版本会忽略未知选项）。只在这里做窄类型扩展，
@@ -23,16 +30,6 @@ type DialogOptions = ConstructorParameters<typeof Dialog>[0] & {
 
 // 宿主把打开的对话框按顺序放在 window.siyuan.dialogs 里，Esc 关的是最后一个
 type HostWindow = Window & { siyuan?: { dialogs?: { element: HTMLElement }[] } };
-
-const LINT_KEYS: Record<LintIssue["kind"], string> = {
-    emptyNegation: "lintEmptyNegation",
-    invalidEscape: "lintInvalidEscape",
-    unclosedClass: "lintUnclosedClass",
-    unbalancedGroup: "lintUnbalancedGroup",
-    badRepetition: "lintBadRepetition",
-    starInClass: "lintStarInClass",
-    badClassRange: "lintBadClassRange",
-};
 
 let openedDialog: Dialog | undefined;
 let closeActiveEditor: (() => void) | undefined;
@@ -52,6 +49,27 @@ const format = (template: string, values: Record<string, string | number>) =>
 
 const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/** syncignore → descSyncignore / guideSyncignore1 */
+const fileKey = (name: IgnoreFileName, prefix: string, suffix = "") =>
+    `${prefix}${name.charAt(0).toUpperCase()}${name.slice(1)}${suffix}`;
+
+const recallActive = (): IgnoreFileName => {
+    try {
+        const stored = window.localStorage.getItem(ACTIVE_STORAGE_KEY);
+        return isIgnoreFileName(stored) ? stored : DEFAULT_IGNORE_FILE;
+    } catch {
+        return DEFAULT_IGNORE_FILE;
+    }
+};
+
+const rememberActive = (name: IgnoreFileName) => {
+    try {
+        window.localStorage.setItem(ACTIVE_STORAGE_KEY, name);
+    } catch {
+        // 隐私模式等拿不到 localStorage 时忽略，不影响编辑
+    }
+};
 
 const askConfirm = (title: string, text: string) => new Promise<boolean>((resolve) => {
     let settled = false;
@@ -77,7 +95,7 @@ export interface OpenEditorOptions {
     i18n: Record<string, string>;
 }
 
-export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<void> => {
+export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void> => {
     const i18n = options.i18n;
     const t = (key: string) => i18n[key] ?? "";
     const describeIssue = (issue: LintIssue) => format(t(LINT_KEYS[issue.kind]), { line: issue.line });
@@ -88,9 +106,10 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     }
     opening = true;
     const current = generation;
+    const initialName = recallActive();
     let read: ReadResult;
     try {
-        read = await readSyncIgnore();
+        read = await readIgnoreFile(initialName);
     } catch (error) {
         showMessage(format(t("readFailed"), { msg: String(error) }), 6000, "error");
         return;
@@ -106,7 +125,6 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         showMessage(format(t("readFailed"), { msg: read.message }), 6000, "error");
         return;
     }
-    const initial = read.snapshot;
     const mobile = isMobileFrontend();
     // disposed 表示 DOM 已拆，closed 表示已经决定关闭（含销毁动画期间）
     let disposed = false;
@@ -114,27 +132,27 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     let allowed = false;
     let confirming = false;
     let saving = false;
+    let switching = false;
     let lintTimer = 0;
+    let loadToken = 0;
 
-    // 内核不剥 BOM，带 BOM 的文件第一条规则会失效；保存时统一不写回 BOM
-    const notice = initial.bom ? `<div class="eds__notice">${escapeHtml(t("bomNotice"))}</div>` : "";
+    let active = initialName;
+    // 当前文件最后一次读入的正文，用作「是否有改动」和「保存前是否被别人改过」的基准
+    let baseline = read.snapshot.text;
+    let bom = read.snapshot.bom;
+
     const content = `<div class="b3-dialog__content eds">
+    <div class="eds__files" role="group"></div>
+    <div class="eds__desc b3-label__text"></div>
     <details class="eds__guide">
-        <summary>${escapeHtml(t("guideSummary"))}</summary>
-        <ul class="eds__guide-list">
-            <li>${escapeHtml(t("guideRule1"))}</li>
-            <li>${escapeHtml(t("guideRule2"))}</li>
-            <li>${escapeHtml(t("guideRule3"))}</li>
-            <li>${escapeHtml(t("guideRule4"))}</li>
-            <li>${escapeHtml(t("guideRule5"))}</li>
-        </ul>
+        <summary></summary>
+        <ul class="eds__guide-list"></ul>
     </details>
-    ${notice}
+    <div class="eds__notice" hidden></div>
     <div class="eds__lint b3-label__text" hidden></div>
     <div class="eds__editor">
-        <div class="eds__gutter" aria-hidden="true">${renderGutter(initial.text.split("\n").length)}</div>
-        <textarea class="eds__textarea" wrap="off" spellcheck="false"
-            placeholder="${escapeHtml(t("placeholder"))}"></textarea>
+        <div class="eds__gutter" aria-hidden="true">${renderGutter(baseline.split("\n").length)}</div>
+        <textarea class="eds__textarea" wrap="off" spellcheck="false"></textarea>
     </div>
 </div>
 <div class="b3-dialog__action">
@@ -188,11 +206,16 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     const textarea = dialog.element.querySelector<HTMLTextAreaElement>(".eds__textarea") as HTMLTextAreaElement;
     const gutter = dialog.element.querySelector<HTMLElement>(".eds__gutter") as HTMLElement;
     const lintBox = dialog.element.querySelector<HTMLElement>(".eds__lint") as HTMLElement;
+    const notice = dialog.element.querySelector<HTMLElement>(".eds__notice") as HTMLElement;
+    const descBox = dialog.element.querySelector<HTMLElement>(".eds__desc") as HTMLElement;
+    const filesBox = dialog.element.querySelector<HTMLElement>(".eds__files") as HTMLElement;
+    const guideSummary = dialog.element.querySelector<HTMLElement>(".eds__guide > summary") as HTMLElement;
+    const guideList = dialog.element.querySelector<HTMLElement>(".eds__guide-list") as HTMLElement;
     const cancelButton = dialog.element.querySelector<HTMLButtonElement>(".b3-button--cancel") as HTMLButtonElement;
     const saveButton = dialog.element.querySelector<HTMLButtonElement>(".b3-button--text") as HTMLButtonElement;
-    textarea.value = initial.text;
+    textarea.value = baseline;
 
-    const isDirty = () => textarea.value !== initial.text;
+    const isDirty = () => textarea.value !== baseline;
 
     // 关闭时先放开模块级引用，销毁动画期间的点击不会被过期的对话框挡住
     const disposeDialog = () => {
@@ -202,8 +225,36 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         dialog.destroy();
     };
 
+    const renderFiles = () => {
+        filesBox.innerHTML = IGNORE_FILES.map(({ name }) => {
+            const activeClass = name === active ? " eds__file--active" : "";
+            return `<button type="button" class="b3-button b3-button--outline eds__file${activeClass}"
+                data-name="${name}">${name}</button>`;
+        }).join("");
+    };
+
+    // 说明与指导都按当前文件的语法来，切换文件时整块替换
+    const renderGuide = () => {
+        descBox.textContent = t(fileKey(active, "desc"));
+        guideSummary.textContent = t("guideSummary");
+        const items: string[] = [];
+        for (let index = 1; index <= GUIDE_ITEM_COUNT; index++) {
+            const text = t(fileKey(active, "guide", String(index)));
+            if (text) {
+                items.push(`<li>${escapeHtml(text)}</li>`);
+            }
+        }
+        guideList.innerHTML = items.join("");
+        textarea.placeholder = t(getIgnoreSyntax(active) === "sql" ? "placeholderSql" : "placeholderGitignore");
+    };
+
+    const renderNotice = () => {
+        notice.hidden = !bom;
+        notice.textContent = bom ? t("bomNotice") : "";
+    };
+
     const renderLint = () => {
-        const issues = disposed ? [] : lintSyncIgnore(textarea.value);
+        const issues = disposed ? [] : lintIgnore(getIgnoreSyntax(active), textarea.value);
         if (!issues.length) {
             lintBox.hidden = true;
             lintBox.textContent = "";
@@ -219,6 +270,13 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         sheetHandle?.relayout();
     };
 
+    const refresh = () => {
+        renderFiles();
+        renderGuide();
+        renderNotice();
+        renderLint();
+    };
+
     const syncScroll = () => {
         gutter.scrollTop = textarea.scrollTop;
     };
@@ -231,6 +289,42 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         }
         window.clearTimeout(lintTimer);
         lintTimer = window.setTimeout(renderLint, LINT_DELAY);
+    };
+
+    const load = async (name: IgnoreFileName) => {
+        // 连点两个文件时只认最后一次，避免先发后到的读盘结果覆盖界面
+        const token = ++loadToken;
+        const next = await readIgnoreFile(name);
+        if (closed || token !== loadToken) {
+            return;
+        }
+        if (!next.ok) {
+            showMessage(format(t("readFailed"), { msg: next.message }), 6000, "error");
+            return;
+        }
+        active = name;
+        baseline = next.snapshot.text;
+        bom = next.snapshot.bom;
+        textarea.value = baseline;
+        gutter.innerHTML = renderGutter(baseline.split("\n").length);
+        syncScroll();
+        refresh();
+        rememberActive(name);
+    };
+
+    const switchTo = async (name: IgnoreFileName) => {
+        if (closed || saving || switching || name === active) {
+            return;
+        }
+        if (isDirty()) {
+            switching = true;
+            const discard = await askConfirm(t("discardTitle"), t("switchText"));
+            switching = false;
+            if (!discard || closed) {
+                return;
+            }
+        }
+        await load(name);
     };
 
     const requestClose = async (): Promise<boolean> => {
@@ -294,7 +388,8 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         textarea.readOnly = true;
         try {
             const text = textarea.value;
-            const current = await readSyncIgnore();
+            const target = active;
+            const current = await readIgnoreFile(target);
             // 每个 await 之后都要重新确认对话框还在，否则会往已经关闭的会话里写文件
             if (closed) {
                 return;
@@ -303,13 +398,13 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
                 showMessage(format(t("readFailed"), { msg: current.message }), 6000, "error");
                 return;
             }
-            if (current.snapshot.text !== initial.text) {
+            if (current.snapshot.text !== baseline) {
                 const overwrite = await askConfirm(t("conflictTitle"), t("conflictText"));
                 if (!overwrite || closed) {
                     return;
                 }
             }
-            const written = await writeSyncIgnore(text);
+            const written = await writeIgnoreFile(target, text);
             if (closed) {
                 return;
             }
@@ -317,7 +412,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
                 showMessage(format(t("saveFailed"), { msg: written.message }), 6000, "error");
                 return;
             }
-            const verify = await readSyncIgnore();
+            const verify = await readIgnoreFile(target);
             if (closed) {
                 return;
             }
@@ -337,6 +432,13 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         }
     };
 
+    filesBox.addEventListener("click", (event) => {
+        const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".eds__file");
+        if (!button || !isIgnoreFileName(button.dataset.name)) {
+            return;
+        }
+        void switchTo(button.dataset.name);
+    });
     cancelButton.addEventListener("click", () => {
         void requestClose();
     });
@@ -360,11 +462,12 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         sheetHandle?.freeze();
         disposeDialog();
     };
-    renderLint();
+    rememberActive(active);
+    refresh();
 };
 
 /** 插件卸载时调用：关闭可能还开着的编辑器，避免监听器残留。 */
-export const closeSyncIgnoreEditor = () => {
+export const closeIgnoreEditor = () => {
     // 让正在读盘的打开流程作废，避免卸载后弹出孤儿对话框
     generation += 1;
     closeActiveEditor?.();

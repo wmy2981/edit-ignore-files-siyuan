@@ -1,8 +1,8 @@
 import { Plugin } from "siyuan";
 import "./index.scss";
-import { closeSyncIgnoreEditor, openSyncIgnoreEditor } from "./editorDialog";
+import { closeIgnoreEditor, openIgnoreEditor } from "./editorDialog";
 
-export default class EditSyncIgnore extends Plugin {
+export default class EditIgnoreFiles extends Plugin {
     declare i18n: Record<string, string>;
     private unloaded = false;
 
@@ -16,12 +16,12 @@ export default class EditSyncIgnore extends Plugin {
         if (this.unloaded) {
             return;
         }
-        void openSyncIgnoreEditor({ i18n: this.i18n });
+        void openIgnoreEditor({ i18n: this.i18n });
     }
 
     onunload() {
         // 编辑器由插件持有，禁用或重载插件时一并关闭，避免监听器残留
         this.unloaded = true;
-        closeSyncIgnoreEditor();
+        closeIgnoreEditor();
     }
 }

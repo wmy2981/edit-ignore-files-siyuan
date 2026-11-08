@@ -15,6 +15,38 @@
   will-change: transform;
 }
 
+.eds__files {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.eds__file.b3-button {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 18px;
+
+  // 宿主 b3-button--outline 是主色描边；当前文件改成主色底，看得出选中的是哪个
+  &.eds__file--active {
+    background-color: var(--b3-theme-primary-lightest);
+    box-shadow: inset 0 0 0 1px var(--b3-theme-primary);
+  }
+}
+
+.eds__desc {
+  flex-shrink: 0;
+  color: var(--b3-theme-on-surface-light);
+  font-size: 12px;
+  line-height: 18px;
+  // 说明最多占两行，别把编辑器挤没
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 .eds__guide {
   flex-shrink: 0;
   border-bottom: 1px solid var(--b3-theme-surface-lighter);
