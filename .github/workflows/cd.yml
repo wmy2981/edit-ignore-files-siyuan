@@ -71,17 +71,11 @@ jobs:
           fi
           echo "release=true" >> "$GITHUB_OUTPUT"
 
-      - name: Tag the current commit
-        if: steps.compare.outputs.release == 'true'
-        run: |
-          set -euo pipefail
-          git tag "v${{ steps.version.outputs.version }}"
-          git push origin "v${{ steps.version.outputs.version }}"
-
       - name: Generate release notes
         if: steps.compare.outputs.release == 'true'
         run: node scripts/release-notes.mjs "${{ steps.compare.outputs.previous-tag }}" > RELEASE_NOTES.md
 
+      # 由 gh 在创建 Release 时一并打 tag：上一步中途失败不会留下没有 Release 的 tag
       - name: Create release
         if: steps.compare.outputs.release == 'true'
         env:
@@ -89,6 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "v${{ steps.version.outputs.version }}" package.zip \
+            --target "${{ github.sha }}" \
             --title "v${{ steps.version.outputs.version }}" \
             --notes-file RELEASE_NOTES.md
 

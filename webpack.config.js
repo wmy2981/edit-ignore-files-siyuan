@@ -50,7 +50,6 @@ module.exports = (env, argv) => {
         plugins.push(
             new ZipPlugin({
                 filename: "package.zip",
-                algorithm: "gzip",
                 include: [/dist/],
                 pathMapper: (assetPath) => {
                     return assetPath.replace("dist/", "");
