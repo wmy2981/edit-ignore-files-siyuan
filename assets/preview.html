@@ -2,11 +2,10 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<title>编辑同步忽略 · 预览图</title>
+<title>编辑忽略文件 · 预览图</title>
 <!--
-  这张图按插件的真实界面 1:1 还原：DOM 结构与 src/editorDialog.ts 生成的完全一致，
-  样式取自思源自身的 dialog / button 规则（app/src/assets/scss/component/_dialog.scss、
-  _button.scss、daylight 主题变量）和本插件 src/index.scss。不画任何插件里不存在的元素。
+  按插件真实界面 1:1 还原：DOM 与 src/editorDialog.ts 生成的一致，样式取自思源的
+  dialog / button 规则与 src/index.scss。隐藏节点（语法提示行、关闭图标、缩放手柄）不画。
 -->
 <style>
     :root {
@@ -150,6 +149,43 @@
         background-color: transparent;
     }
 
+    .b3-button--outline {
+        color: var(--b3-theme-primary);
+        box-shadow: inset 0 0 0 .6px var(--b3-theme-primary);
+        background-color: transparent;
+    }
+
+    /* ---- 文件切换条与说明（src/index.scss） ---- */
+    .eds__files {
+        display: flex;
+        flex-shrink: 0;
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    .eds__file.b3-button {
+        flex: 0 0 auto;
+        padding: 2px 8px;
+        font-size: 12px;
+        line-height: 18px;
+    }
+
+    .eds__file.b3-button.eds__file--active {
+        background-color: var(--b3-theme-primary-lightest);
+        box-shadow: inset 0 0 0 1px var(--b3-theme-primary);
+    }
+
+    .eds__desc {
+        flex-shrink: 0;
+        color: var(--b3-theme-on-surface-light);
+        font-size: 12px;
+        line-height: 18px;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+
     .fn__space {
         width: 8px;
         display: inline-block;
@@ -282,17 +318,24 @@
     <div class="b3-dialog__scrim"></div>
     <div role="dialog" aria-modal="true" tabindex="-1" class="b3-dialog__container eds-dialog"
         style="width:720px;height:461px;left:auto;top:auto">
-        <div class="resize__move b3-dialog__header">编辑同步忽略</div>
+        <div class="resize__move b3-dialog__header">编辑忽略文件</div>
         <div class="b3-dialog__body">
             <div class="b3-dialog__content eds">
+                <div class="eds__files" role="group">
+                    <button type="button" class="b3-button b3-button--outline eds__file eds__file--active" data-name="syncignore">syncignore</button>
+                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="indexignore">indexignore</button>
+                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="embeddingignore">embeddingignore</button>
+                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="searchignore">searchignore</button>
+                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="refsearchignore">refsearchignore</button>
+                </div>
+                <div class="eds__desc b3-label__text">控制哪些文件参与数据同步与快照，路径以 data 目录为基准。</div>
                 <details class="eds__guide">
-                    <summary>编辑指导</summary>
+                    <summary>语法说明</summary>
                     <ul class="eds__guide-list">
-                        <li>每行一条规则，以 data 目录为基准，例如 /assets/ 或 /assets/*.pdf。</li>
-                        <li># 开头是注释，! 开头表示取消忽略（取反），* 匹配任意字符，** 匹配多级目录。</li>
-                        <li>建议以 / 开头，避免同名路径被误匹配；排除整个目录时写成 /目录/。</li>
+                        <li>每行一条规则，如 /assets/、/assets/*.pdf、**/temp/**；# 开头是注释，! 开头取消忽略。</li>
                         <li>路径分隔符用 /；反斜杠在内核里按正则转义处理，写错会让整条规则失效。</li>
-                        <li>文件里可能包含其他工具写入的规则，本插件不会自动调整它们；保存后规则在下次同步时生效。</li>
+                        <li>内核还会追加内置规则（/.siyuan/conf.json、用户指南、/storage/view-state.json 等），这些不用写在这里。</li>
+                        <li>保存后规则在下次数据同步时生效。</li>
                     </ul>
                 </details>
                 <div class="eds__lint b3-label__text" hidden></div>

@@ -1,7 +1,7 @@
 {
-  "name": "edit-syncignore-siyuan",
+  "name": "edit-ignore-files-siyuan",
   "author": "wmy2981",
-  "url": "https://github.com/wmy2981/edit-syncignore-siyuan",
+  "url": "https://github.com/wmy2981/edit-ignore-files-siyuan",
   "version": "0.1.0",
   "minAppVersion": "3.1.20",
   "backends": [
@@ -11,12 +11,12 @@
     "all"
   ],
   "displayName": {
-    "default": "Edit Sync Ignore",
-    "zh-CN": "编辑同步忽略"
+    "default": "Edit Ignore Files",
+    "zh-CN": "编辑忽略文件"
   },
   "description": {
-    "default": "Edit the sync ignore file (data/.siyuan/syncignore) in SiYuan.",
-    "zh-CN": "在思源内编辑同步忽略文件（data/.siyuan/syncignore）。"
+    "default": "Edit the SiYuan ignore files.",
+    "zh-CN": "编辑思源的各种忽略文件。"
   },
   "readme": {
     "default": "README.md",
@@ -29,11 +29,13 @@
   },
   "keywords": [
     "syncignore",
-    "sync",
-    "同步忽略",
-    "忽略规则",
+    "indexignore",
+    "searchignore",
+    "embeddingignore",
     "gitignore",
-    "exclude",
+    "忽略文件",
+    "忽略规则",
+    "同步忽略",
     "排除"
   ],
   "icon": "icon.png",

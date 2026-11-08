@@ -1,50 +1,36 @@
-# Edit Sync Ignore
+# Edit Ignore Files
 
 [中文](README.zh-CN.md) · **English**
 
-A SiYuan plugin that edits the data sync ignore list (`data/.siyuan/syncignore`) with a line-numbered editor, so the rules no longer have to be edited by hand in a file manager.
+Edit the ignore files under SiYuan's `data/.siyuan/` in one line-numbered editor instead of a file manager.
 
-## Features
+## Files
 
-- One click to edit: the `Settings` icon in the plugin list opens the editor directly, there is no extra settings panel.
-- Real SiYuan UI: the native `Dialog` and `b3-button` styles are used as-is, and the mobile drawer follows the host's own sheet classes, grip and drag thresholds, with no custom window chrome.
-- Line-numbered editor: line numbers stay aligned with the text, long lines scroll horizontally instead of wrapping.
-- Editing guide: one collapsed line in the panel that explains the syntax and shows an example; click it to expand.
-- Syntax errors only: rules that cannot work as written are reported (an invalid backslash escape, unbalanced parentheses, an unclosed bracket, an illegal `+` or `{…}` repeat, a `*` inside a character class, a reversed class range, a bare `!` with no rule). Style suggestions are not shown, and errors never block saving.
-- Saved by exact round trip: the file is read again before saving, only the text you see is written, and it is read again afterwards to verify what landed on disk. Lines written by other tools are preserved untouched.
-- Unsaved changes are guarded: cancelling, clicking the scrim, pressing `Esc` or dragging the sheet down asks for confirmation first.
-- Mobile drawer identical to SiYuan's own: the same grip, the same viewport-based height, the same opening sequence and pull-to-dismiss thresholds, and it can be dragged taller.
+| File | What it controls | Syntax |
+| --- | --- | --- |
+| `syncignore` | Which files take part in sync and snapshots | gitignore, paths relative to `data` |
+| `indexignore` | Which documents stay out of the index (search, backlinks, outline) | gitignore, paths carry the notebook ID |
+| `embeddingignore` | Which documents stay out of the AI vector index | gitignore, paths carry the notebook ID |
+| `searchignore` | Which blocks are excluded from search results (`blocks` table) | one SQL condition per line |
+| `refsearchignore` | Which reference texts are left out of virtual reference candidates (`refs` table) | one SQL condition per line |
 
 ## Usage
 
-1. Open `Settings → Marketplace → Downloaded → Edit Sync Ignore`.
-2. Click the `Settings` icon of that entry; the editor opens.
-3. Edit the rules, then click `Save`.
+1. Open `Settings → Marketplace → Downloaded → Edit Ignore Files` and click its `Settings` icon; the editor opens.
+2. Switch files with the buttons on top, then save. The last edited file is remembered.
 
-## Rule syntax
+## Syntax
 
-Each line is one rule, resolved against the `data` directory, in gitignore syntax:
+- gitignore files: one rule per line, `#` comments, `!` negation, `*` and `**` wildcards, such as `/assets/*.pdf` or `**/temp/**`. `indexignore` and `embeddingignore` paths carry the notebook ID, like `/20210808180117-6v0mkx5/temp/**`.
+- SQL files: one condition per line, such as `type != 'l'`. The kernel joins them onto the query with ` AND `, so `#` is not a comment, a trailing blank line breaks the query, and quotes and parentheses must pair up.
 
-| Line | Meaning |
-| --- | --- |
-| `# text` | comment |
-| `/assets/` | ignore the whole `data/assets` directory |
-| `/assets/*.pdf` | ignore PDFs directly inside `data/assets` |
-| `**/temp/**` | ignore nested `temp` directories at any depth |
-| `!assets/manual/*.pdf` | negate an earlier rule |
+## Notes
 
-Start rules with `/` so that a look-alike path deeper in the tree is not matched by accident, and use `/` rather than `\` as the separator.
-
-SiYuan appends a few built-in rules itself (`/.siyuan/conf.json`, user guide data, `/storage/view-state.json`, ...). Those never appear in the file and this plugin does not add them.
-
-## Notes and limits
-
-- Saving writes the file immediately, but the rules take effect on the next data sync. The plugin does not start a sync for you.
-- The file may be rewritten by SiYuan while it is loaded (the appearance isolation block is cleaned up before the rules are read). If that happens during editing, the plugin asks before overwriting those changes.
-- No rule repair and no backups: the text you see is exactly what gets written, so changes made by other tools or plugins survive.
-- The mobile bottom sheet needs SiYuan 3.8.10-alpha.5 or later, because that is where the host sheet styles were introduced. On older versions the editor is a normal centred dialog, and the mobile back gesture cannot be intercepted.
-- If the file starts with a UTF-8 BOM, saving removes it: the kernel does not strip the BOM and turns it into part of the first rule, which silently disables that rule. The editor shows a one-line notice when it happens.
-- The plugin only touches `data/.siyuan/syncignore`; it does not read or write anything else.
+- Only rules that cannot work as written, or conditions that break the query, are reported. Nothing blocks saving.
+- When it takes effect: `syncignore` on the next sync, `indexignore` after the index is rebuilt, `embeddingignore` when the vector index runs again, and both SQL files are re-read within 30 seconds.
+- A UTF-8 BOM is removed on save, with a notice: the kernel keeps the BOM and the first line stops working.
+- The mobile bottom sheet needs SiYuan 3.8.10-alpha.5 or later; older versions get a normal centred dialog.
+- Only those five files are read or written.
 
 ## Development
 
@@ -55,7 +41,7 @@ npm test            # unit tests, no SiYuan instance needed
 npm run build       # production build, writes dist/ and package.zip
 npm run verify:package # check what package.zip contains
 npm run dev         # watch build
-npm run render:icon # assets/icon.svg → assets/icon.png
+npm run render:icon    # assets/icon.svg → assets/icon.png
 npm run render:preview # assets/preview.html → assets/preview.png
 ```
 

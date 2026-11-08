@@ -1,13 +1,13 @@
 {
-  "name": "edit-syncignore-siyuan",
+  "name": "edit-ignore-files-siyuan",
   "version": "0.1.0",
-  "description": "Edit the sync ignore file (data/.siyuan/syncignore) in SiYuan.",
+  "description": "Edit the SiYuan ignore files.",
   "main": "src/index.ts",
   "scripts": {
     "dev": "webpack --config webpack.config.js --mode development",
     "build": "webpack --config webpack.config.js --mode production",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test test-dist/test/lint.test.js test-dist/test/sheetGesture.test.js test-dist/test/syncignore.test.js",
+    "test": "tsc -p tsconfig.test.json && node --test test-dist/test/ignoreFile.test.js test-dist/test/ignoreFiles.test.js test-dist/test/lintGitignore.test.js test-dist/test/lintSql.test.js test-dist/test/sheetGesture.test.js",
     "verify:package": "node scripts/verify-package.mjs",
     "render:icon": "node scripts/render-icon.mjs",
     "render:preview": "node scripts/render-preview.mjs"
@@ -15,7 +15,10 @@
   "keywords": [
     "siyuan",
     "siyuan-plugin",
-    "syncignore"
+    "ignore-files",
+    "syncignore",
+    "indexignore",
+    "searchignore"
   ],
   "author": "wmy2981",
   "license": "MIT",
