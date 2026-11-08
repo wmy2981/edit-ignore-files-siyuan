@@ -26,6 +26,7 @@ type HostWindow = Window & {
     siyuan?: {
         config?: { system?: { container?: string } },
         mobile?: { size?: MobileSize },
+        dialogs?: { element: HTMLElement }[],
     }
 };
 
@@ -104,10 +105,13 @@ let sheetStylesSupported: boolean | undefined;
 
 // 宿主抽屉样式里，布局层给遮罩留安全区、面板层让正文撑满，两个缺一不可
 const SHEET_SELECTORS = [".mobile-sheet-layout", ".mobile-sheet-panel"];
+// 用词边界匹配，避免 `.mobile-sheet-panel` 命中 `.mobile-sheet-panel--compact`
+const SHEET_SELECTOR_PATTERNS = SHEET_SELECTORS.map(selector =>
+    new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\w-])`));
 
-const hasSheetRule = (rules: CSSRuleList, selector: string): boolean => {
+const hasSheetRule = (rules: CSSRuleList, selector: RegExp): boolean => {
     for (const rule of Array.from(rules)) {
-        if (rule instanceof CSSStyleRule && rule.selectorText.includes(selector)) {
+        if (rule instanceof CSSStyleRule && selector.test(rule.selectorText)) {
             return true;
         }
         const nested = (rule as CSSGroupingRule).cssRules;
@@ -133,7 +137,7 @@ export const hasHostBottomSheetStyles = (): boolean => {
             // 跨域样式表读不到规则，跳过
         }
     }
-    sheetStylesSupported = SHEET_SELECTORS.every(selector => sheets.some(rules => hasSheetRule(rules, selector)));
+    sheetStylesSupported = SHEET_SELECTOR_PATTERNS.every(selector => sheets.some(rules => hasSheetRule(rules, selector)));
     return sheetStylesSupported;
 };
 
@@ -186,6 +190,18 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
 
     const isClosing = () => element.dataset.dialogClosing === "true";
     const standardMax = () => getStandardMaxHeight(getFullHeight(), available);
+
+    // 与宿主 bindBottomSheetDialog 的 canStart 一致：只有最上层的抽屉能起手拖拽
+    const canStart = () => {
+        const dialogs = (window as HostWindow).siyuan?.dialogs;
+        if (dialogs?.length && dialogs[dialogs.length - 1].element !== element) {
+            return false;
+        }
+        const body = sheet.querySelector<HTMLElement>(":scope > .b3-dialog__body");
+        return !isClosing() &&
+            !element.closest('[inert], [aria-busy="true"]') &&
+            !body?.matches('[inert], [aria-busy="true"]');
+    };
 
     // 测量自然高度时临时展开滚动区，测量后恢复原有滚动位置
     const getBounds = () => {
@@ -326,7 +342,7 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     const findTouch = (touches: TouchList) => Array.from(touches).find(touch => touch.identifier === start?.id);
 
     const onTouchStart = (event: TouchEvent) => {
-        if (closing || disposed || isClosing()) {
+        if (closing || disposed || !canStart()) {
             return;
         }
         reset();
@@ -352,6 +368,11 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
 
     const onTouchMove = (event: TouchEvent) => {
         if (exitOwnsVisuals() || !start) {
+            return;
+        }
+        // 上方又开了浮层或面板被设为不可交互时，手势交回给它们
+        if (!canStart()) {
+            onTouchCancel();
             return;
         }
         const touch = findTouch(event.touches);
@@ -390,6 +411,10 @@ export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
 
     const onTouchEnd = (event: TouchEvent) => {
         if (exitOwnsVisuals() || !start) {
+            return;
+        }
+        if (!canStart()) {
+            onTouchCancel();
             return;
         }
         const touch = findTouch(event.changedTouches);

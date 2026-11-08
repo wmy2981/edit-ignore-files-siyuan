@@ -28,8 +28,9 @@ export interface SheetGestureResult {
 }
 
 /**
- * 计算拖拽可用区间：下限取「自然高度、chrome + 120、可用高度」的最小值，
- * 再与「chrome、普通抽屉上限」的较大值取小，避免内容很少时反而被拉高。
+ * 计算拖拽可用区间：下限先取「自然高度、chrome + 120、可用高度」的最小值，
+ * 再按宿主的做法与「chrome、普通抽屉上限」的较大值取小——standardMax 小于 chrome + 120 时它会进一步收紧下限，
+ * 不会把下限抬高。
  */
 export const getSheetBounds = (natural: number, chrome: number, available: number, standardMax: number): SheetBounds => ({
     min: Math.min(Math.max(0, Math.min(natural, chrome + MIN_SHEET_GAP, available)), Math.max(chrome, standardMax)),
