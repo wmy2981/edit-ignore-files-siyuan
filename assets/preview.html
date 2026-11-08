@@ -225,9 +225,9 @@
 
     .eds__gutter {
         flex: 0 0 auto;
-        min-width: 40px;
-        padding-right: 8px;
-        padding-left: 8px;
+        min-width: 22px;
+        padding-right: 6px;
+        padding-left: 4px;
         overflow: hidden;
         text-align: right;
         color: var(--b3-theme-on-surface-light);
@@ -273,10 +273,6 @@
                         <li>文件里可能包含其他工具写入的规则，本插件不会自动调整它们；保存后规则在下次同步时生效。</li>
                     </ul>
                 </details>
-                <div class="eds__lint b3-label__text">
-                    <div>第 3 行建议以 / 开头</div>
-                    <div>第 6 行与第 3 行重复</div>
-                </div>
                 <div class="eds__editor">
                     <div class="eds__gutter" aria-hidden="true"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div><div>6</div><div>7</div></div>
                     <textarea class="eds__textarea" wrap="off" spellcheck="false" placeholder="每行一条规则，例如 /assets/*.pdf"># 忽略附件里的 PDF 与临时目录

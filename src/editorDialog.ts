@@ -6,6 +6,7 @@
 // - 保存后回读校验，确认落盘内容与编辑器一致。
 import { confirm, Dialog, getFrontend, showMessage } from "siyuan";
 import { bindMobileBottomSheet, hasHostBottomSheetStyles } from "./sheet";
+import type { SheetHandle } from "./sheet";
 import { lintSyncIgnore, readSyncIgnore, writeSyncIgnore } from "./syncignore";
 import type { LintIssue } from "./syncignore";
 
@@ -61,14 +62,12 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     const t = (key: string) => i18n[key] ?? "";
     const describeIssue = (issue: LintIssue) => {
         switch (issue.kind) {
-            case "leadingSlash":
-                return format(t("lintLeadingSlash"), { line: issue.line });
             case "backslash":
                 return format(t("lintBackslash"), { line: issue.line });
-            case "duplicate":
-                return format(t("lintDuplicate"), { line: issue.line, other: issue.other ?? 0 });
+            case "emptyNegation":
+                return format(t("lintEmptyNegation"), { line: issue.line });
             default:
-                return format(t("lintTrailingSpace"), { line: issue.line });
+                return format(t("lintUnclosedClass"), { line: issue.line });
         }
     };
 
@@ -115,21 +114,24 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
 </div>`;
 
     let disposeSheet: () => void = () => undefined;
+    let sheetHandle: SheetHandle | undefined;
 
     const dialogOptions: DialogOptions = {
         title: t("dialogTitle"),
         content,
         width: mobile ? "100vw" : "720px",
-        height: mobile ? "56vh" : "70vh",
+        // 抽屉自己按可用视口算高度，旧版本没有抽屉样式时才用固定高度
+        height: mobile && hasHostBottomSheetStyles() ? "auto" : "70vh",
         containerClassName: "eds-dialog",
         // 关闭入口统一由插件自己提供，桌面端本来就不显示这个图标
         hideCloseIcon: true,
         beforeClose: () => {
             if (allowed || !isDirty()) {
                 allowed = true;
+                sheetHandle?.freeze();
                 return true;
             }
-            requestClose();
+            void requestClose();
             return false;
         },
         destroyCallback: () => {
@@ -182,24 +184,30 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         lintTimer = window.setTimeout(renderLint, LINT_DELAY);
     };
 
-    function requestClose() {
-        if (disposed || confirming) {
-            return;
+    const requestClose = async (): Promise<boolean> => {
+        if (disposed) {
+            return false;
         }
         if (allowed || !isDirty()) {
             allowed = true;
+            sheetHandle?.freeze();
             dialog.destroy();
-            return;
+            return true;
+        }
+        if (confirming) {
+            return false;
         }
         confirming = true;
-        void askConfirm(t("discardTitle"), t("discardText")).then((discard) => {
-            confirming = false;
-            if (discard) {
-                allowed = true;
-                dialog.destroy();
-            }
-        });
-    }
+        const discard = await askConfirm(t("discardTitle"), t("discardText"));
+        confirming = false;
+        if (!discard) {
+            return false;
+        }
+        allowed = true;
+        sheetHandle?.freeze();
+        dialog.destroy();
+        return true;
+    };
 
     const onScrimClick = (event: MouseEvent) => {
         const target = event.target as HTMLElement | null;
@@ -209,7 +217,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         // 宿主的遮罩监听挂在遮罩元素上，这里在捕获阶段先接管
         event.preventDefault();
         event.stopPropagation();
-        requestClose();
+        void requestClose();
     };
 
     const onKeydown = (event: KeyboardEvent) => {
@@ -223,7 +231,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         }
         event.preventDefault();
         event.stopPropagation();
-        requestClose();
+        void requestClose();
     };
 
     const save = async () => {
@@ -261,7 +269,9 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
         }
     };
 
-    cancelButton.addEventListener("click", requestClose);
+    cancelButton.addEventListener("click", () => {
+        void requestClose();
+    });
     saveButton.addEventListener("click", () => {
         void save();
     });
@@ -271,7 +281,8 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     dialog.element.addEventListener("click", onScrimClick, true);
 
     if (mobile && hasHostBottomSheetStyles()) {
-        disposeSheet = bindMobileBottomSheet({ dialog, requestClose });
+        sheetHandle = bindMobileBottomSheet({ dialog, close: requestClose });
+        disposeSheet = sheetHandle.dispose;
     }
 
     openedDialog = dialog;
@@ -279,6 +290,7 @@ export const openSyncIgnoreEditor = async (options: OpenEditorOptions): Promise<
     // 插件被禁用或重载时直接关闭，不再走“是否放弃修改”的确认
     closeActiveEditor = () => {
         allowed = true;
+        sheetHandle?.freeze();
         dialog.destroy();
     };
     renderLint();

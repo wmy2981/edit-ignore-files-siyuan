@@ -1,15 +1,76 @@
-// 移动端底部抽屉适配。
+// 移动端底部抽屉。
 //
 // 宿主的抽屉能力（bindBottomSheetDialog / bindBottomSheetDrag / mobileSheetLayout）只供内部业务使用，
-// 插件拿到的 Dialog 在移动端仍是居中弹窗。这里复用宿主已经定义的抽屉样式类，让面板获得原生的
-// 圆角、贴底与入场/退场过渡；抓手与拖拽手势按宿主的规则自行实现，不复制宿主代码：
-// - 抓手拖动改高度，上限是可用视口高度，下限是 chrome + 120px；
-// - 压到最低后继续下拉把面板整体下移，超过 min(120px, 下限 * 25%) 或速度大于 0.6px/ms 才关闭；
-// - 只在本插件自己的面板上生效，无需判断是否最顶层（宿主 dialog 的遮罩已经挡住下层）。
+// 没有导出给插件，所以这里按宿主的同一套规则实现：类名、抓手、布局高度、入场时序、拖拽手势与阈值
+// 全部对齐思源原生抽屉，确保观感和手感一致。
+//   - 抓手：宿主样式 `.b3-menu__title--root` 画的 32×4 短横；
+//   - 布局：上限为完整视口高度的 56%，下限为 chrome + 120px，拖高后上限放宽到可用高度；
+//   - 入场：先移到视口外并隐藏，等键盘/视口稳定后再展开，不在动画期间改变内容；
+//   - 拖拽：整块面板都能起手（输入框、按钮等除外），只有从抓手起手才改高度，其余是下拉位移；
+//   - 关闭：excess 超过 min(120px, 下限 × 25%)，或下拉超过 20px 且速度大于 0.6px/ms。
 import type {Dialog} from "siyuan";
 
-const GRIP_HEIGHT = 16;
-const MIN_DRAG_GAP = 120;
+const GRIP_CLASS = "b3-menu__title b3-menu__title--root";
+// 与宿主一致：可交互元素和拖拽元素上的手势不归抽屉处理
+const EXCLUDE_SELECTOR = 'input, textarea, select, button, [contenteditable="true"], .protyle, ' +
+    '.block__icon, .b3-dialog__close, [draggable="true"]';
+const MIN_SHEET_GAP = 120;
+const STANDARD_RATIO = 0.56;
+const CROSS_AXIS_TOLERANCE = 4;
+
+type HostWindow = Window & { siyuan?: { config?: { system?: { container?: string } } } };
+
+// App 内的可视视口由原生层负责，只有浏览器才需要读 visualViewport
+const isMobileApp = () => {
+    const container = (window as HostWindow).siyuan?.config?.system?.container;
+    return container === "android" || container === "ios" || container === "harmony";
+};
+
+const viewportBounds = () => {
+    if (!isMobileApp() && window.visualViewport) {
+        const top = Math.max(0, Math.min(window.innerHeight, window.visualViewport.offsetTop));
+        return {
+            top,
+            bottom: Math.max(top, Math.min(window.innerHeight,
+                window.visualViewport.offsetTop + window.visualViewport.height)),
+        };
+    }
+    return { top: 0, bottom: window.innerHeight };
+};
+
+// 键盘收起后等待布局稳定再展开，最多等 1s（兼容浮动键盘与窗口尺寸变化）
+const waitForSheetViewport = (options: {
+    height: () => number,
+    fullHeight: number,
+    open: () => void,
+}) => {
+    const start = performance.now();
+    const waitForKeyboard = options.fullHeight - options.height() > 100;
+    let frame = 0;
+    let cancelled = false;
+    let restoredAt: number | undefined;
+    const check = () => {
+        if (cancelled) {
+            return;
+        }
+        const now = performance.now();
+        if (options.height() >= options.fullHeight - 2) {
+            restoredAt ??= now;
+        } else {
+            restoredAt = undefined;
+        }
+        if (!waitForKeyboard || (restoredAt !== undefined && now - restoredAt >= 32) || now - start >= 1000) {
+            options.open();
+            return;
+        }
+        frame = requestAnimationFrame(check);
+    };
+    frame = requestAnimationFrame(check);
+    return () => {
+        cancelled = true;
+        cancelAnimationFrame(frame);
+    };
+};
 
 let sheetStylesSupported: boolean | undefined;
 
@@ -27,8 +88,7 @@ const hasSheetRule = (rules: CSSRuleList): boolean => {
 };
 
 /**
- * 探测宿主是否定义了抽屉样式。样式只在 3.8.10-alpha.5 之后存在，旧版本上加类名不会有任何效果，
- * 因此探测一次并缓存，用于决定是否启用抓手与拖拽。
+ * 探测宿主是否定义了抽屉样式。样式只在 3.8.10-alpha.5 之后存在，探测不到就退回普通对话框。
  */
 export const hasHostBottomSheetStyles = (): boolean => {
     if (sheetStylesSupported !== undefined) {
@@ -40,7 +100,6 @@ export const hasHostBottomSheetStyles = (): boolean => {
         try {
             rules = styleSheet.cssRules;
         } catch {
-            // 跨域样式表读不到规则，跳过
             continue;
         }
         if (hasSheetRule(rules)) {
@@ -53,110 +112,419 @@ export const hasHostBottomSheetStyles = (): boolean => {
 
 export interface SheetOptions {
     dialog: Dialog;
-    /** 下拉关闭时调用，由调用方决定是否真正关闭（有未保存改动时会先确认） */
-    requestClose: () => void;
+    /** 下拉关闭：返回是否真的关闭了（有未保存改动时会先确认） */
+    close: () => Promise<boolean>;
 }
 
-export const bindMobileBottomSheet = (options: SheetOptions): (() => void) => {
+export interface SheetHandle {
+    /** 关闭前冻结当前高度，让退出位移从已绘制的位置滑出 */
+    freeze: () => void;
+    dispose: () => void;
+}
+
+interface SheetGesture {
+    height: number;
+    min: number;
+    max: number;
+    offset: number;
+    time: number;
+    phaseStart?: number;
+}
+
+export const bindMobileBottomSheet = (options: SheetOptions): SheetHandle => {
     const element = options.dialog.element;
-    const container = element.querySelector<HTMLElement>(".b3-dialog__container");
     const overlay = element.querySelector<HTMLElement>(".b3-dialog");
-    if (!container || !overlay) {
-        return () => undefined;
+    const sheet = element.querySelector<HTMLElement>(".b3-dialog__container");
+    const scrim = element.querySelector<HTMLElement>(".b3-dialog__scrim");
+    if (!overlay || !sheet || !scrim) {
+        return { freeze: () => undefined, dispose: () => undefined };
     }
+    const toolbar = document.getElementById("keyboardToolbar");
+
     element.classList.add("mobile-bottom-sheet-dialog");
-    container.classList.add("mobile-bottom-sheet");
-
+    overlay.classList.add("mobile-sheet-layout");
+    sheet.classList.add("mobile-bottom-sheet", "mobile-sheet-panel");
+    // 抽屉不参与通用对话框的移动、缩放和关闭图标；关闭由插件自己的按钮与手势负责
+    sheet.querySelector(".b3-dialog__close")?.remove();
+    sheet.querySelector(".b3-dialog__header")?.classList.remove("resize__move");
+    sheet.querySelectorAll(":scope > .resize__rd, :scope > .resize__ld, :scope > .resize__lt, " +
+        ":scope > .resize__rt, :scope > .resize__r, :scope > .resize__d, :scope > .resize__t, :scope > .resize__l")
+        .forEach(handle => handle.remove());
     const grip = document.createElement("div");
-    grip.className = "eds-grip";
+    grip.className = GRIP_CLASS;
     grip.setAttribute("aria-hidden", "true");
-    container.prepend(grip);
+    sheet.prepend(grip);
 
-    let dragging = false;
-    let startY = 0;
-    let startHeight = 0;
-    let startTime = 0;
-    let bounds = measure();
-
-    function measure() {
-        const style = getComputedStyle(overlay as HTMLElement);
-        const available = Math.max(0, overlay!.clientHeight -
-            (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0));
-        const chrome = GRIP_HEIGHT +
-            (container!.querySelector<HTMLElement>(".b3-dialog__header")?.offsetHeight || 0) +
-            (container!.querySelector<HTMLElement>(".b3-dialog__action")?.offsetHeight || 0);
-        const min = Math.min(container!.getBoundingClientRect().height, chrome + MIN_DRAG_GAP, available);
-        return { available, min: Math.max(0, min) };
-    }
+    let disposed = false;
+    let frozen = false;
+    let preferred: number | undefined;
+    let available = 0;
+    let fullHeight = window.innerHeight;
+    let landscape = window.innerWidth < window.innerHeight;
+    let cancelOpen: (() => void) | undefined;
+    let opening = false;
+    let closeObserver: MutationObserver | undefined;
+    let layoutObserver: MutationObserver | undefined;
+    let frameObserver: ResizeObserver | undefined;
 
     const isClosing = () => element.dataset.dialogClosing === "true";
+    const standardMax = () => Math.min(available, Math.max(0, fullHeight) * STANDARD_RATIO);
 
-    const onPointerDown = (event: PointerEvent) => {
-        if (isClosing() || (event.pointerType === "mouse" && event.button !== 0)) {
+    const syncFullHeight = () => {
+        // 横竖屏各记一份完整高度，键盘压缩后的高度不能覆盖它
+        const nextLandscape = window.innerWidth < window.innerHeight;
+        if (nextLandscape !== landscape) {
+            landscape = nextLandscape;
+            fullHeight = window.innerHeight;
             return;
         }
-        // 键盘弹起或旋转会改变可用高度，每次起手重新测一次
-        bounds = measure();
-        dragging = true;
-        startY = event.clientY;
-        startHeight = container!.getBoundingClientRect().height;
-        startTime = performance.now();
-        // 手势期间必须临时关掉宿主过渡，否则位移会滞后 150ms；松手后立即清除。
-        container!.style.transition = "none";
-        container!.style.maxHeight = `${Math.round(bounds.available)}px`;
-        grip.setPointerCapture(event.pointerId);
-        event.preventDefault();
+        fullHeight = Math.max(fullHeight, window.innerHeight);
     };
 
-    const onPointerMove = (event: PointerEvent) => {
-        if (!dragging) {
-            return;
+    // 测量自然高度时临时展开滚动区，测量后恢复原有滚动位置
+    const getBounds = () => {
+        const positions = [sheet, ...Array.from(sheet.querySelectorAll<HTMLElement>("*"))]
+            .filter(node => node.scrollTop !== 0 || node.scrollLeft !== 0)
+            .map(node => ({ node, top: node.scrollTop, left: node.scrollLeft }));
+        const height = sheet.style.height;
+        const maxHeight = sheet.style.maxHeight;
+        const body = sheet.querySelector<HTMLElement>(":scope > .b3-dialog__body");
+        const flex = body?.style.flex;
+        sheet.style.height = "auto";
+        sheet.style.maxHeight = "none";
+        if (body) {
+            body.style.flex = "none";
         }
-        const desired = startHeight + (startY - event.clientY);
-        const height = Math.min(bounds.available, Math.max(bounds.min, desired));
-        container!.style.height = `${Math.round(height)}px`;
-        // 已经压到最低仍然继续下拉：整块面板跟手下移，准备触发关闭
-        const overshoot = Math.max(0, bounds.min - desired);
-        container!.style.transform = overshoot > 0 ? `translateY(${Math.round(overshoot)}px)` : "";
-        event.preventDefault();
+        const natural = sheet.getBoundingClientRect().height;
+        const footer = body?.querySelector<HTMLElement>(":scope > .b3-dialog__action");
+        const chrome = Math.max(0, natural - (body?.getBoundingClientRect().height || 0)) +
+            (footer?.getBoundingClientRect().height || 0);
+        if (body && flex !== undefined) {
+            body.style.flex = flex;
+        }
+        sheet.style.height = height;
+        sheet.style.maxHeight = maxHeight;
+        positions.forEach(({ node, top, left }) => {
+            node.scrollTop = top;
+            node.scrollLeft = left;
+        });
+        return {
+            min: Math.min(Math.max(0, Math.min(natural, chrome + MIN_SHEET_GAP, available)), Math.max(chrome, standardMax())),
+            max: Math.max(0, available),
+        };
     };
 
-    const finish = (event: PointerEvent) => {
-        if (!dragging) {
+    const resize = () => {
+        if (disposed || !overlay.isConnected) {
             return;
         }
-        dragging = false;
-        if (grip.hasPointerCapture(event.pointerId)) {
-            grip.releasePointerCapture(event.pointerId);
+        syncFullHeight();
+        const viewport = viewportBounds();
+        const bottom = toolbar && !toolbar.classList.contains("fn__none") ?
+            Math.min(viewport.bottom, toolbar.getBoundingClientRect().top) : viewport.bottom;
+        overlay.style.top = `${viewport.top}px`;
+        // 整个视口可用时直接贴住布局底边，避免整数高度截断后露出背景
+        const fullViewport = bottom === window.innerHeight;
+        overlay.style.bottom = fullViewport ? "0px" : "auto";
+        overlay.style.height = fullViewport ? "auto" : `${Math.max(0, bottom - viewport.top)}px`;
+        if (frozen) {
+            return;
         }
-        const overshoot = Math.max(0, bounds.min - (startHeight + (startY - event.clientY)));
-        const velocity = overshoot / Math.max(1, performance.now() - startTime);
-        container!.style.transition = "";
-        if (overshoot > Math.min(120, bounds.min * 0.25) || velocity > 0.6) {
-            options.requestClose();
-            // 关闭被拒绝时把面板放回原位
-            window.setTimeout(() => {
-                if (element.isConnected) {
-                    container!.style.transform = "";
+        const style = getComputedStyle(overlay);
+        // 安全区只由这一层 padding 占位
+        available = Math.max(0, bottom - viewport.top -
+            (parseFloat(style.paddingTop) || 0) - (parseFloat(style.paddingBottom) || 0));
+        sheet.classList.toggle("mobile-sheet-panel--compact", available <= 160);
+        const target = preferred === undefined ? standardMax() :
+            Math.max(getBounds().min, Math.min(preferred, available));
+        sheet.style.maxHeight = `${preferred === undefined ? standardMax() : available}px`;
+        sheet.style.height = `${Math.max(0, target)}px`;
+    };
+
+    const setPreferredHeight = (height: number) => {
+        preferred = height;
+        resize();
+    };
+
+    const freeze = () => {
+        if (frozen || disposed) {
+            return;
+        }
+        const height = `${sheet.getBoundingClientRect().height}px`;
+        sheet.style.height = height;
+        sheet.style.maxHeight = height;
+        frozen = true;
+    };
+
+    const changeGesture = (state: SheetGesture, offset: number) => {
+        const time = performance.now();
+        const requested = state.height - offset;
+        const excess = Math.max(0, state.min - requested);
+        if (!excess) {
+            state.phaseStart = undefined;
+        } else if (state.phaseStart === undefined) {
+            const boundary = state.height - state.min;
+            const distance = offset - state.offset;
+            const fraction = distance > 0 ? Math.max(0, Math.min(1, (boundary - state.offset) / distance)) : 1;
+            state.phaseStart = state.time + (time - state.time) * fraction;
+        }
+        state.offset = offset;
+        state.time = time;
+        const speed = state.phaseStart === undefined || time <= state.phaseStart ? 0 : excess / (time - state.phaseStart);
+        return {
+            height: Math.max(state.min, Math.min(state.max, requested)),
+            excess,
+            close: excess > Math.min(120, state.min * .25) || (excess > 20 && speed > .6),
+        };
+    };
+
+    // ---- 入场：与宿主一致，先移出视口并隐藏，视口稳定后再展开 ----
+    sheet.style.transition = "none";
+    sheet.style.transform = "translateY(100%)";
+    sheet.style.visibility = "hidden";
+    const updateOpen = () => {
+        if (!element.classList.contains("b3-dialog--open")) {
+            if (isClosing()) {
+                freeze();
+                // 退出样式接管拖动位移，保留从当前绘制位置向下滑出的过渡
+                sheet.style.transition = "";
+                sheet.style.transform = "";
+            }
+            cancelOpen?.();
+            return;
+        }
+        if (opening) {
+            return;
+        }
+        opening = true;
+        cancelOpen = waitForSheetViewport({
+            height: () => Math.min(window.innerHeight, window.visualViewport?.height ?? window.innerHeight),
+            fullHeight: Math.max(window.innerHeight, fullHeight),
+            open: () => {
+                if (!element.isConnected || !element.classList.contains("b3-dialog--open")) {
+                    return;
                 }
-            }, 0);
+                resize();
+                sheet.style.visibility = "";
+                void sheet.offsetHeight;
+                sheet.style.transition = "";
+                void sheet.offsetHeight;
+                sheet.style.transform = "";
+            },
+        });
+    };
+    closeObserver = new MutationObserver(updateOpen);
+    closeObserver.observe(element, { attributes: true, attributeFilter: ["class"] });
+    updateOpen();
+
+    // ---- 拖拽：从抓手起手改高度，其余起手是下拉位移 ----
+    let start: { x: number, y: number, time: number, id: number } | undefined;
+    let gesture: SheetGesture | undefined;
+    let dragging = false;
+    let closing = false;
+    let suppressClickUntil = 0;
+
+    const clearGesture = () => {
+        start = undefined;
+        gesture = undefined;
+        dragging = false;
+    };
+    const exitOwnsVisuals = () => {
+        if (!disposed && !closing && !isClosing()) {
+            return false;
+        }
+        clearGesture();
+        return true;
+    };
+    const reset = () => {
+        sheet.style.transition = "";
+        sheet.style.transform = "";
+        scrim.style.opacity = "";
+        clearGesture();
+    };
+    const findTouch = (touches: TouchList) => Array.from(touches).find(touch => touch.identifier === start?.id);
+
+    const onTouchStart = (event: TouchEvent) => {
+        if (closing || disposed || isClosing()) {
             return;
         }
-        container!.style.transform = "";
+        reset();
+        const target = event.target as HTMLElement;
+        if (event.touches.length !== 1 || target.closest(EXCLUDE_SELECTOR)) {
+            return;
+        }
+        // 内层滚动区域已经开始滚动时，手势归滚动
+        for (let parent: HTMLElement | null = target; parent && parent !== sheet; parent = parent.parentElement) {
+            if (parent.scrollHeight > parent.clientHeight + 1 && parent.scrollTop > 0 &&
+                ["auto", "scroll", "overlay"].includes(getComputedStyle(parent).overflowY)) {
+                return;
+            }
+        }
+        const touch = event.touches[0];
+        start = { x: touch.clientX, y: touch.clientY, time: performance.now(), id: touch.identifier };
+        if (grip.contains(target)) {
+            const height = sheet.getBoundingClientRect().height;
+            const bounds = getBounds();
+            gesture = { height, ...bounds, min: Math.min(bounds.min, height), offset: 0, time: start.time };
+        }
     };
 
-    grip.addEventListener("pointerdown", onPointerDown);
-    grip.addEventListener("pointermove", onPointerMove);
-    grip.addEventListener("pointerup", finish);
-    grip.addEventListener("pointercancel", finish);
+    const onTouchMove = (event: TouchEvent) => {
+        if (exitOwnsVisuals() || !start) {
+            return;
+        }
+        const touch = findTouch(event.touches);
+        if (event.touches.length !== 1 || !touch) {
+            onTouchCancel();
+            return;
+        }
+        const offset = touch.clientY - start.y;
+        if (Math.abs(touch.clientX - start.x) > Math.abs(offset)) {
+            onTouchCancel();
+            return;
+        }
+        if (!dragging && Math.abs(offset) < CROSS_AXIS_TOLERANCE) {
+            return;
+        }
+        // 没有抓手时只能下拉，上滑留给内容
+        if (!gesture && offset <= 0) {
+            onTouchCancel();
+            return;
+        }
+        dragging = true;
+        sheet.style.transition = "none";
+        const result = gesture ? changeGesture(gesture, offset) : undefined;
+        if (result) {
+            setPreferredHeight(result.height);
+        }
+        if (exitOwnsVisuals()) {
+            return;
+        }
+        const excess = result ? result.excess : Math.max(0, offset);
+        sheet.style.transform = `translateY(${excess}px)`;
+        scrim.style.opacity = Math.max(0, 1 - excess / Math.max(sheet.clientHeight, 1)).toString();
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+    };
 
-    return () => {
-        grip.removeEventListener("pointerdown", onPointerDown);
-        grip.removeEventListener("pointermove", onPointerMove);
-        grip.removeEventListener("pointerup", finish);
-        grip.removeEventListener("pointercancel", finish);
-        grip.remove();
-        container.classList.remove("mobile-bottom-sheet");
-        element.classList.remove("mobile-bottom-sheet-dialog");
+    const onTouchEnd = (event: TouchEvent) => {
+        if (exitOwnsVisuals() || !start) {
+            return;
+        }
+        const touch = findTouch(event.changedTouches);
+        if (!touch) {
+            return;
+        }
+        if (!dragging) {
+            reset();
+            return;
+        }
+        const offset = touch.clientY - start.y;
+        const result = gesture ? changeGesture(gesture, offset) : undefined;
+        if (result) {
+            setPreferredHeight(result.height);
+        }
+        if (exitOwnsVisuals()) {
+            return;
+        }
+        const duration = Math.max(performance.now() - start.time, 1);
+        const shouldClose = result ? result.close : offset > Math.min(120, sheet.clientHeight * .25) ||
+            (offset > 20 && offset / duration > .6);
+        // 拖动结束后抑制随后的点击，避免松手即触发按钮
+        suppressClickUntil = performance.now() + 300;
+        void sheet.offsetHeight;
+        sheet.style.transition = "";
+        clearGesture();
+        if (!shouldClose) {
+            reset();
+            return;
+        }
+        closing = true;
+        void options.close().then((closed) => {
+            if (disposed || closed || isClosing() || !sheet.isConnected) {
+                return;
+            }
+            closing = false;
+            reset();
+        }).catch(() => {
+            if (!disposed && !isClosing()) {
+                closing = false;
+                reset();
+            }
+        });
+    };
+
+    function onTouchCancel() {
+        if (exitOwnsVisuals() || !start) {
+            return;
+        }
+        if (dragging) {
+            suppressClickUntil = performance.now() + 300;
+        }
+        reset();
+    }
+
+    const onClick = (event: MouseEvent) => {
+        if (performance.now() < suppressClickUntil) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+        }
+    };
+
+    // 视口、方向或工具栏高度变化时取消进行中的手势并重新布局
+    const onViewportChange = () => {
+        onTouchCancel();
+        resize();
+    };
+
+    sheet.addEventListener("touchstart", onTouchStart, { passive: true });
+    sheet.addEventListener("touchmove", onTouchMove, { passive: false });
+    sheet.addEventListener("touchend", onTouchEnd);
+    sheet.addEventListener("touchcancel", onTouchCancel);
+    sheet.addEventListener("click", onClick, true);
+    window.addEventListener("resize", onViewportChange);
+    window.addEventListener("orientationchange", onViewportChange);
+    window.visualViewport?.addEventListener("resize", onViewportChange);
+    window.visualViewport?.addEventListener("scroll", onViewportChange);
+    window.screen.orientation?.addEventListener?.("change", onViewportChange);
+    frameObserver = typeof ResizeObserver === "undefined" ? undefined :
+        new ResizeObserver(() => resize());
+    if (toolbar) {
+        frameObserver?.observe(toolbar);
+    }
+    layoutObserver = new MutationObserver(() => resize());
+    if (toolbar) {
+        layoutObserver.observe(toolbar, { attributes: true, attributeFilter: ["class", "style"] });
+    }
+
+    resize();
+
+    return {
+        freeze,
+        dispose: () => {
+            if (disposed) {
+                return;
+            }
+            disposed = true;
+            cancelOpen?.();
+            closeObserver?.disconnect();
+            layoutObserver?.disconnect();
+            frameObserver?.disconnect();
+            sheet.removeEventListener("touchstart", onTouchStart);
+            sheet.removeEventListener("touchmove", onTouchMove);
+            sheet.removeEventListener("touchend", onTouchEnd);
+            sheet.removeEventListener("touchcancel", onTouchCancel);
+            sheet.removeEventListener("click", onClick, true);
+            window.removeEventListener("resize", onViewportChange);
+            window.removeEventListener("orientationchange", onViewportChange);
+            window.visualViewport?.removeEventListener("resize", onViewportChange);
+            window.visualViewport?.removeEventListener("scroll", onViewportChange);
+            window.screen.orientation?.removeEventListener?.("change", onViewportChange);
+            grip.remove();
+            sheet.classList.remove("mobile-bottom-sheet", "mobile-sheet-panel");
+            overlay.classList.remove("mobile-sheet-layout");
+            element.classList.remove("mobile-bottom-sheet-dialog");
+        },
     };
 };

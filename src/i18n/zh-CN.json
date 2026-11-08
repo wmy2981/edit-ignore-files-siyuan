@@ -1,7 +1,4 @@
 {
-  "settingTitle": "同步忽略文件",
-  "settingDescription": "编辑 data/.siyuan/syncignore，决定哪些文件不参与数据同步。",
-  "openButton": "编辑忽略规则",
   "dialogTitle": "编辑同步忽略",
   "guideSummary": "编辑指导",
   "guideRule1": "每行一条规则，以 data 目录为基准，例如 /assets/ 或 /assets/*.pdf。",
@@ -20,9 +17,8 @@
   "discardText": "关闭后本次修改不会保留。",
   "conflictTitle": "文件已被改动",
   "conflictText": "同步忽略文件在你编辑期间被思源或其它工具改动过，继续保存会用当前内容覆盖它。",
-  "lintLeadingSlash": "第 {line} 行建议以 / 开头",
-  "lintBackslash": "第 {line} 行包含反斜杠，应改为 /",
-  "lintDuplicate": "第 {line} 行与第 {other} 行重复",
-  "lintTrailingSpace": "第 {line} 行结尾有空白",
-  "lintMore": "还有 {count} 条提示"
+  "lintBackslash": "第 {line} 行含反斜杠，路径分隔符必须用 /",
+  "lintEmptyNegation": "第 {line} 行只有 ! 却没有规则内容",
+  "lintUnclosedClass": "第 {line} 行的字符类 [ 没有闭合",
+  "lintMore": "还有 {count} 处语法错误"
 }

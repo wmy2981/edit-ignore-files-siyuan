@@ -40,7 +40,7 @@
   flex-shrink: 0;
   max-height: 84px;
   overflow: auto;
-  color: var(--b3-card-warning-color, var(--b3-theme-on-surface));
+  color: var(--b3-card-error-color, var(--b3-theme-error));
   font-size: 12px;
   line-height: 18px;
 
@@ -69,9 +69,9 @@
 
 .eds__gutter {
   flex: 0 0 auto;
-  min-width: 40px;
-  padding-right: 8px;
-  padding-left: 8px;
+  min-width: 22px;
+  padding-right: 6px;
+  padding-left: 4px;
   overflow: hidden;
   text-align: right;
   color: var(--b3-theme-on-surface-light);
@@ -101,25 +101,5 @@
 
   @media (min-width: 721px) {
     font-size: 13px;
-  }
-}
-
-// 移动端抽屉抓手：与宿主一致性由尺寸与配色保证，拖拽逻辑在 sheet.ts 里自行实现。
-.eds-grip {
-  flex: 0 0 auto;
-  height: 16px;
-  position: relative;
-  touch-action: none;
-
-  &::before {
-    position: absolute;
-    top: 5px;
-    left: calc(50% - 16px);
-    width: 32px;
-    height: 4px;
-    border-radius: 2px;
-    background-color: var(--b3-theme-on-surface-light);
-    content: "";
-    opacity: .45;
   }
 }

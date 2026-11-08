@@ -79,45 +79,40 @@ export const writeSyncIgnore = async (text: string, bom: boolean): Promise<Write
     return { ok: true, message: "" };
 };
 
-export type LintKind = "leadingSlash" | "backslash" | "duplicate" | "trailingSpace";
+export type LintKind = "backslash" | "emptyNegation" | "unclosedClass";
 
 export interface LintIssue {
     /** 1 起始的行号 */
     line: number;
     kind: LintKind;
-    /** 重复行的另一处行号 */
-    other?: number;
 }
 
 /**
- * 只做不依赖内核匹配引擎的纯文本检查：真正生效与否由内核在同步时判定，
- * 这里只提示最常见的四类手写错误，不阻断保存。
+ * 只报会让规则写法本身失效的语法问题，不做风格建议（缺前导斜杠、重复行、行尾空白之类一律不提示）。
+ * 规则是否真的命中文件由内核在同步时判定，这里不重复实现匹配引擎。
  */
 export const lintSyncIgnore = (text: string): LintIssue[] => {
     const issues: LintIssue[] = [];
-    const seen = new Map<string, number>();
     text.split("\n").forEach((raw, index) => {
         const line = index + 1;
-        const trimmed = raw.trimEnd();
-        if (trimmed !== raw) {
-            issues.push({ line, kind: "trailingSpace" });
-        }
-        if (!trimmed || trimmed.startsWith("#")) {
+        const rule = raw.trimEnd();
+        if (!rule || rule.startsWith("#")) {
             return;
         }
         // 取反规则的前缀不参与路径判断
-        const path = trimmed.startsWith("!") ? trimmed.slice(1) : trimmed;
+        const path = rule.startsWith("!") ? rule.slice(1) : rule;
+        if (!path.trim()) {
+            issues.push({ line, kind: "emptyNegation" });
+            return;
+        }
+        // 内核按 / 分隔的数据相对路径匹配，反斜杠永远命中不到任何文件
         if (path.includes("\\")) {
             issues.push({ line, kind: "backslash" });
         }
-        if (path && !path.startsWith("/")) {
-            issues.push({ line, kind: "leadingSlash" });
-        }
-        const previous = seen.get(trimmed);
-        if (previous === undefined) {
-            seen.set(trimmed, line);
-        } else {
-            issues.push({ line, kind: "duplicate", other: previous });
+        const opened = (path.match(/\[/g) || []).length;
+        const closed = (path.match(/\]/g) || []).length;
+        if (opened !== closed) {
+            issues.push({ line, kind: "unclosedClass" });
         }
     });
     return issues;
