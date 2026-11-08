@@ -142,7 +142,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     let bom = read.snapshot.bom;
 
     const content = `<div class="b3-dialog__content eds">
-    <div class="eds__files" role="group"></div>
+    <select class="b3-select eds__files" aria-label="${escapeHtml(t("dialogTitle"))}"></select>
     <div class="eds__desc b3-label__text"></div>
     <details class="eds__guide">
         <summary></summary>
@@ -208,7 +208,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     const lintBox = dialog.element.querySelector<HTMLElement>(".eds__lint") as HTMLElement;
     const notice = dialog.element.querySelector<HTMLElement>(".eds__notice") as HTMLElement;
     const descBox = dialog.element.querySelector<HTMLElement>(".eds__desc") as HTMLElement;
-    const filesBox = dialog.element.querySelector<HTMLElement>(".eds__files") as HTMLElement;
+    const filesBox = dialog.element.querySelector<HTMLSelectElement>(".eds__files") as HTMLSelectElement;
     const guideSummary = dialog.element.querySelector<HTMLElement>(".eds__guide > summary") as HTMLElement;
     const guideList = dialog.element.querySelector<HTMLElement>(".eds__guide-list") as HTMLElement;
     const cancelButton = dialog.element.querySelector<HTMLButtonElement>(".b3-button--cancel") as HTMLButtonElement;
@@ -226,11 +226,8 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     };
 
     const renderFiles = () => {
-        filesBox.innerHTML = IGNORE_FILES.map(({ name }) => {
-            const activeClass = name === active ? " eds__file--active" : "";
-            return `<button type="button" class="b3-button b3-button--outline eds__file${activeClass}"
-                data-name="${name}">${name}</button>`;
-        }).join("");
+        filesBox.innerHTML = IGNORE_FILES.map(({ name }) => `<option value="${name}">${name}</option>`).join("");
+        filesBox.value = active;
     };
 
     // 说明与指导都按当前文件的语法来，切换文件时整块替换
@@ -300,6 +297,8 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
         }
         if (!next.ok) {
             showMessage(format(t("readFailed"), { msg: next.message }), 6000, "error");
+            // 读失败时保持原文件，下拉框也跟着回退
+            renderFiles();
             return;
         }
         active = name;
@@ -313,7 +312,12 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     };
 
     const switchTo = async (name: IgnoreFileName) => {
+        // 下拉框已经被用户改过，任何一次中止都要把它选回当前文件
+        const restore = () => {
+            filesBox.value = active;
+        };
         if (closed || saving || switching || name === active) {
+            restore();
             return;
         }
         if (isDirty()) {
@@ -321,6 +325,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
             const discard = await askConfirm(t("discardTitle"), t("switchText"));
             switching = false;
             if (!discard || closed) {
+                restore();
                 return;
             }
         }
@@ -432,12 +437,11 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
         }
     };
 
-    filesBox.addEventListener("click", (event) => {
-        const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(".eds__file");
-        if (!button || !isIgnoreFileName(button.dataset.name)) {
+    filesBox.addEventListener("change", () => {
+        if (!isIgnoreFileName(filesBox.value)) {
             return;
         }
-        void switchTo(button.dataset.name);
+        void switchTo(filesBox.value);
     });
     cancelButton.addEventListener("click", () => {
         void requestClose();

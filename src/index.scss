@@ -15,24 +15,12 @@
   will-change: transform;
 }
 
-.eds__files {
-  display: flex;
+.eds__files.b3-select {
   flex-shrink: 0;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.eds__file.b3-button {
-  flex: 0 0 auto;
-  padding: 2px 8px;
-  font-size: 12px;
-  line-height: 18px;
-
-  // 宿主 b3-button--outline 是主色描边；当前文件改成主色底，看得出选中的是哪个
-  &.eds__file--active {
-    background-color: var(--b3-theme-primary-lightest);
-    box-shadow: inset 0 0 0 1px var(--b3-theme-primary);
-  }
+  // 列布局里不要被拉成整行宽
+  align-self: flex-start;
+  max-width: 100%;
+  font-size: 13px;
 }
 
 .eds__desc {

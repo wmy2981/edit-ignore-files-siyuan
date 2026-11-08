@@ -27,6 +27,10 @@
         --b3-card-warning-color: #8a4f00;
         --b3-card-error-color: #b3261e;
         --b3-theme-error: #b3261e;
+        --b3-theme-primary-light: rgba(53, 117, 240, .54);
+        --b3-theme-primary-lighter: rgba(53, 117, 240, .38);
+        --b3-menu-background: var(--b3-theme-background);
+        --b3-select-background: url("data:image/svg+xml;utf8,<svg fill='rgba(95, 99, 104, .68)' height='24' viewBox='0 0 24 24' width='24' xmlns='http://www.w3.org/2000/svg'><path d='M7 10l5 5 5-5z'/><path d='M0 0h24v24H0z' fill='none'/></svg>") no-repeat right 2px center var(--b3-menu-background);
         --b3-dialog-shadow: 0 8px 24px rgba(0, 0, 0, .2);
         --b3-list-hover: rgba(0, 0, 0, .075);
         --b3-button-shadow: 0 1px 2px 0 rgb(0 0 0 / .3), 0 1px 3px 1px rgb(0 0 0 / .15);
@@ -155,24 +159,30 @@
         background-color: transparent;
     }
 
+    /* ---- 思源下拉框（component/_select.scss） ---- */
+    .b3-select {
+        border: 0;
+        border-radius: var(--b3-border-radius);
+        padding: 4px 26px 4px 8px;
+        box-sizing: border-box;
+        line-height: 20px;
+        color: var(--b3-theme-on-background);
+        height: 28px;
+        font-size: 14px;
+        font-family: inherit;
+        box-shadow: inset 0 0 0 1px var(--b3-border-color);
+        background: var(--b3-select-background);
+        appearance: none;
+        cursor: pointer;
+        overflow: hidden;
+    }
+
     /* ---- 文件切换条与说明（src/index.scss） ---- */
-    .eds__files {
-        display: flex;
+    .eds__files.b3-select {
         flex-shrink: 0;
-        flex-wrap: wrap;
-        gap: 6px;
-    }
-
-    .eds__file.b3-button {
-        flex: 0 0 auto;
-        padding: 2px 8px;
-        font-size: 12px;
-        line-height: 18px;
-    }
-
-    .eds__file.b3-button.eds__file--active {
-        background-color: var(--b3-theme-primary-lightest);
-        box-shadow: inset 0 0 0 1px var(--b3-theme-primary);
+        align-self: flex-start;
+        max-width: 100%;
+        font-size: 13px;
     }
 
     .eds__desc {
@@ -321,13 +331,13 @@
         <div class="resize__move b3-dialog__header">编辑忽略文件</div>
         <div class="b3-dialog__body">
             <div class="b3-dialog__content eds">
-                <div class="eds__files" role="group">
-                    <button type="button" class="b3-button b3-button--outline eds__file eds__file--active" data-name="syncignore">syncignore</button>
-                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="indexignore">indexignore</button>
-                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="embeddingignore">embeddingignore</button>
-                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="searchignore">searchignore</button>
-                    <button type="button" class="b3-button b3-button--outline eds__file" data-name="refsearchignore">refsearchignore</button>
-                </div>
+                <select class="b3-select eds__files" aria-label="编辑忽略文件">
+                    <option value="syncignore" selected>syncignore</option>
+                    <option value="indexignore">indexignore</option>
+                    <option value="embeddingignore">embeddingignore</option>
+                    <option value="searchignore">searchignore</option>
+                    <option value="refsearchignore">refsearchignore</option>
+                </select>
                 <div class="eds__desc b3-label__text">控制哪些文件参与数据同步与快照，路径以 data 目录为基准。</div>
                 <details class="eds__guide">
                     <summary>语法说明</summary>
