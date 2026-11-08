@@ -7,7 +7,8 @@
 // 空行会拼出悬空的 AND（incomplete input）、`#` 不是注释（被当成绑定参数）、
 // 引号或括号不成对（unrecognized token / incomplete input）、分号会变成多条语句、
 // 行首行尾悬空的运算符同样是 incomplete input。
-// 文件第一行是空的会被内核丢掉（`ret[0] == ""` 只剔除一次），所以只有第一行允许空。
+// 文件第一行完全为空会被内核丢掉（`ret[0] == ""` 只剔除一次），所以只有这种首行允许空；
+// 首行只有空格或制表符时不会被剔除，照样拼出悬空的 AND。
 import type { LintIssue, SqlLintKind } from "./lint";
 
 // 行尾悬空的运算符，拼上后续子句后一定是残句
@@ -57,8 +58,8 @@ const lintLine = (line: string): SqlLintKind | null => {
 export const lintSql = (text: string): LintIssue[] => {
     const issues: LintIssue[] = [];
     text.split("\n").forEach((raw, index) => {
-        // 内核只剔除第一个空元素，第一行留空是安全的
-        if (index === 0 && !raw.trim()) {
+        // 内核只剔除第一个完全为空的元素，首行只有空白字符时仍会拼出悬空的 AND
+        if (index === 0 && raw === "") {
             return;
         }
         const kind = lintLine(raw);

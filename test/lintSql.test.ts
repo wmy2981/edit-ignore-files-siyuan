@@ -19,8 +19,14 @@ describe("lintSql", () => {
 
     test("accepts an empty file and a leading blank line", () => {
         assert.deepEqual(lintSql(""), []);
-        // 内核只剔除第一个空元素，第一行留空是安全的
+        // 内核只剔除第一个完全为空的元素，第一行留空是安全的
         assert.deepEqual(lintSql("\ntype != 'l'"), []);
+    });
+
+    test("reports a first line that is only whitespace", () => {
+        // 内核不剔除只有空格或制表符的首行，它照样拼出悬空的 AND
+        assert.deepEqual(lintSql("   \ntype != 'l'"), [{ line: 1, kind: "emptyLine" }]);
+        assert.deepEqual(lintSql("\t\ntype != 'l'"), [{ line: 1, kind: "emptyLine" }]);
     });
 
     test("accepts a hash inside a string", () => {

@@ -4,6 +4,8 @@
   "placeholderGitignore": "One rule per line, for example /assets/*.pdf",
   "placeholderSql": "One condition per line, for example type != 'l'",
   "cancel": "Cancel",
+  "confirm": "Confirm",
+  "discard": "Discard changes",
   "save": "Save",
   "saved": "Saved",
   "saveFailed": "Save failed: {msg}",
@@ -52,6 +54,5 @@
   "lintUnbalancedQuote": "Line {line} has an unpaired single quote, so the SQL cannot parse",
   "lintUnbalancedParen": "Line {line} has unbalanced parentheses, so the SQL cannot parse",
   "lintStatementSeparator": "Line {line} contains a semicolon, which turns the query into several statements",
-  "lintDanglingOperator": "Line {line} leaves an operator dangling: a leading AND/OR or a missing value",
-  "lintMore": "{count} more problems"
+  "lintDanglingOperator": "Line {line} leaves an operator dangling: a leading AND/OR or a missing value"
 }

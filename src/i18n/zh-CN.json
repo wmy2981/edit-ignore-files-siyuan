@@ -4,6 +4,8 @@
   "placeholderGitignore": "每行一条规则，例如 /assets/*.pdf",
   "placeholderSql": "每行一个条件，例如 type != 'l'",
   "cancel": "取消",
+  "confirm": "确定",
+  "discard": "放弃修改",
   "save": "保存",
   "saved": "已保存",
   "saveFailed": "保存失败：{msg}",
@@ -52,6 +54,5 @@
   "lintUnbalancedQuote": "第 {line} 行的单引号没有配对，SQL 解析会失败",
   "lintUnbalancedParen": "第 {line} 行的圆括号不成对，SQL 解析会失败",
   "lintStatementSeparator": "第 {line} 行含分号，会被当成多条语句而失败",
-  "lintDanglingOperator": "第 {line} 行的运算符悬空：行首多了 AND/OR，或行尾缺了值",
-  "lintMore": "还有 {count} 处问题"
+  "lintDanglingOperator": "第 {line} 行的运算符悬空：行首多了 AND/OR，或行尾缺了值"
 }

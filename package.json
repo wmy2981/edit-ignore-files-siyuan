@@ -7,7 +7,7 @@
     "dev": "webpack --config webpack.config.js --mode development",
     "build": "webpack --config webpack.config.js --mode production",
     "typecheck": "tsc --noEmit",
-    "test": "tsc -p tsconfig.test.json && node --test test-dist/test/ignoreFile.test.js test-dist/test/ignoreFiles.test.js test-dist/test/lintGitignore.test.js test-dist/test/lintSql.test.js test-dist/test/sheetGesture.test.js",
+    "test": "node -e \"require('node:fs').rmSync('test-dist',{recursive:true,force:true})\" && tsc -p tsconfig.test.json && node --test \"test-dist/test/*.test.js\"",
     "verify:package": "node scripts/verify-package.mjs",
     "render:icon": "node scripts/render-icon.mjs",
     "render:preview": "node scripts/render-preview.mjs"
@@ -22,6 +22,9 @@
   ],
   "author": "wmy2981",
   "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "copy-webpack-plugin": "^13.0.1",

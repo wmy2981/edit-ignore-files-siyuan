@@ -253,8 +253,9 @@
 
     .eds__lint {
         flex-shrink: 0;
-        max-height: 84px;
+        max-height: min(40%, 160px);
         overflow: auto;
+        overscroll-behavior: contain;
         color: var(--b3-card-error-color, var(--b3-theme-error));
         font-size: 12px;
         line-height: 18px;

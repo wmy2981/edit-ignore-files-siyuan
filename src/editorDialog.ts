@@ -4,17 +4,17 @@
 // - 有未保存改动时，切换文件、取消、点遮罩、按 Esc、拖动下拉都必须先确认；
 // - 保存前重读文件比对，内核可能在我们编辑期间改写它（加载规则前会做外观隔离块清理）；
 // - 保存后回读校验，确认落盘内容与编辑器一致。
-import { Dialog, confirm, getFrontend, showMessage } from "siyuan";
+import { Dialog, getFrontend, showMessage } from "siyuan";
 import { DEFAULT_IGNORE_FILE, IGNORE_FILES, getIgnoreSyntax, isIgnoreFileName } from "./ignoreFiles";
 import type { IgnoreFileName } from "./ignoreFiles";
 import { readIgnoreFile, writeIgnoreFile } from "./ignoreFile";
 import type { ReadResult } from "./ignoreFile";
 import { LINT_KEYS, lintIgnore } from "./lint";
 import type { LintIssue } from "./lint";
+import { decideFileSwitch } from "./fileSwitch";
 import { bindMobileBottomSheet, hasHostBottomSheetStyles } from "./sheet";
 import type { SheetHandle } from "./sheet";
 
-const LINT_LIMIT = 5;
 const LINT_DELAY = 150;
 const GUIDE_ITEM_COUNT = 4;
 /** 上次编辑的文件，下次打开直接回到它 */
@@ -71,18 +71,6 @@ const rememberActive = (name: IgnoreFileName) => {
     }
 };
 
-const askConfirm = (title: string, text: string) => new Promise<boolean>((resolve) => {
-    let settled = false;
-    const settle = (value: boolean) => {
-        if (settled) {
-            return;
-        }
-        settled = true;
-        resolve(value);
-    };
-    confirm(title, text, () => settle(true), () => settle(false));
-});
-
 const renderGutter = (lineCount: number) => {
     const rows: string[] = [];
     for (let index = 1; index <= lineCount; index++) {
@@ -133,6 +121,10 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     let confirming = false;
     let saving = false;
     let switching = false;
+    // 正在读取目标文件：文本框只读，避免读取结果覆盖刚输入的内容
+    let loading = false;
+    // 自建确认框，插件卸载或对话框被宿主关闭时要一起收掉
+    let confirmDialog: Dialog | undefined;
     let lintTimer = 0;
     let loadToken = 0;
 
@@ -189,6 +181,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
         destroyCallback: () => {
             disposed = true;
             closed = true;
+            confirmDialog?.destroy();
             // 宿主发起的关闭（移动端返回手势、旧版本上的宿主 Esc）不经过 disposeDialog，
             // 这里必须自己放开模块级引用，否则编辑器再也打不开
             if (openedDialog === dialog) {
@@ -215,7 +208,15 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     const saveButton = dialog.element.querySelector<HTMLButtonElement>(".b3-button--text") as HTMLButtonElement;
     textarea.value = baseline;
 
-    const isDirty = () => textarea.value !== baseline;
+    // 读取期间文本框只读，且旧内容已经确认放弃，不参与关闭判断
+    const isDirty = () => !loading && textarea.value !== baseline;
+
+    // 读取与保存期间锁住编辑和保存，避免落盘内容或读取结果与界面上看到的不一致
+    const updateControls = () => {
+        const locked = saving || loading;
+        textarea.readOnly = locked;
+        saveButton.disabled = locked;
+    };
 
     // 关闭时先放开模块级引用，销毁动画期间的点击不会被过期的对话框挡住
     const disposeDialog = () => {
@@ -256,12 +257,9 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
             lintBox.hidden = true;
             lintBox.textContent = "";
         } else {
-            const lines = issues.slice(0, LINT_LIMIT).map(describeIssue);
-            if (issues.length > LINT_LIMIT) {
-                lines.push(format(t("lintMore"), { count: issues.length - LINT_LIMIT }));
-            }
+            // 全部列出来，由提示区自己滚动，不再截断成「还有 N 处」
             lintBox.hidden = false;
-            lintBox.innerHTML = lines.map((line) => `<div>${escapeHtml(line)}</div>`).join("");
+            lintBox.innerHTML = issues.map((issue) => `<div>${escapeHtml(describeIssue(issue))}</div>`).join("");
         }
         // 提示行的出现或消失改变了内容高度，让抽屉重新量一次
         sheetHandle?.relayout();
@@ -288,13 +286,74 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
         lintTimer = window.setTimeout(renderLint, LINT_DELAY);
     };
 
+    // 宿主 confirm 的按钮文案和样式都改不了；放弃修改要用红框按钮，所以自己建确认框
+    const askConfirm = (options: { title: string; text: string; confirmText: string; danger?: boolean }) =>
+        new Promise<boolean>((resolve) => {
+            let settled = false;
+            let removeKeydown: () => void = () => undefined;
+            const settle = (value: boolean) => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                resolve(value);
+            };
+            const dialog = new Dialog({
+                title: options.title,
+                content: `<div class="b3-dialog__content">
+    <div class="ft__breakword">${escapeHtml(options.text)}</div>
+</div>
+<div class="b3-dialog__action">
+    <button class="b3-button b3-button--cancel">${escapeHtml(t("cancel"))}</button>
+    <div class="fn__space"></div>
+    <button class="b3-button ${options.danger ? "b3-button--remove" : "b3-button--text"}">${escapeHtml(options.confirmText)}</button>
+</div>`,
+                width: mobile ? "92vw" : "520px",
+                destroyCallback: () => {
+                    removeKeydown();
+                    if (confirmDialog === dialog) {
+                        confirmDialog = undefined;
+                    }
+                    settle(false);
+                },
+            });
+            const buttons = dialog.element.querySelectorAll<HTMLButtonElement>(".b3-dialog__action .b3-button");
+            buttons[0].addEventListener("click", () => {
+                settle(false);
+                dialog.destroy();
+            });
+            buttons[1].addEventListener("click", () => {
+                settle(true);
+                dialog.destroy();
+            });
+            // 宿主只给内置确认框处理 Esc，自建的这个要自己收口；上方还有别的对话框时交给宿主
+            const onKeydown = (event: KeyboardEvent) => {
+                if (event.key !== "Escape" || event.isComposing || event.keyCode === 229 ||
+                    !isTopmostDialog(dialog.element)) {
+                    return;
+                }
+                event.preventDefault();
+                event.stopPropagation();
+                settle(false);
+                dialog.destroy();
+            };
+            document.addEventListener("keydown", onKeydown, true);
+            removeKeydown = () => document.removeEventListener("keydown", onKeydown, true);
+            confirmDialog = dialog;
+            buttons[1].focus({ preventScroll: true });
+        });
+
     const load = async (name: IgnoreFileName) => {
         // 连点两个文件时只认最后一次，避免先发后到的读盘结果覆盖界面
         const token = ++loadToken;
+        loading = true;
+        updateControls();
         const next = await readIgnoreFile(name);
         if (closed || token !== loadToken) {
             return;
         }
+        loading = false;
+        updateControls();
         if (!next.ok) {
             showMessage(format(t("readFailed"), { msg: next.message }), 6000, "error");
             // 读失败时保持原文件，下拉框也跟着回退
@@ -316,13 +375,32 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
         const restore = () => {
             filesBox.value = active;
         };
-        if (closed || saving || switching || name === active) {
+        const action = decideFileSwitch(name, {
+            active,
+            loading,
+            dirty: isDirty(),
+            blocked: closed || saving || switching,
+        });
+        if (action === "restore") {
             restore();
             return;
         }
-        if (isDirty()) {
+        if (action === "cancel") {
+            // 选回当前文件等于取消还没完成的读取，旧结果由 token 丢弃
+            loadToken += 1;
+            loading = false;
+            updateControls();
+            restore();
+            return;
+        }
+        if (action === "confirm") {
             switching = true;
-            const discard = await askConfirm(t("discardTitle"), t("switchText"));
+            const discard = await askConfirm({
+                title: t("discardTitle"),
+                text: t("switchText"),
+                confirmText: t("discard"),
+                danger: true,
+            });
             switching = false;
             if (!discard || closed) {
                 restore();
@@ -347,7 +425,12 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
             return false;
         }
         confirming = true;
-        const discard = await askConfirm(t("discardTitle"), t("discardText"));
+        const discard = await askConfirm({
+            title: t("discardTitle"),
+            text: t("discardText"),
+            confirmText: t("discard"),
+            danger: true,
+        });
         confirming = false;
         if (!discard || closed) {
             return false;
@@ -374,7 +457,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
             return;
         }
         // 宿主的 Esc 会直接 destroy 最上层对话框，绕过未保存确认；这里改成走自己的关闭流程。
-        // 上方还有别的对话框（比如宿主的确认框）时交给宿主处理。
+        // 上方还有别的对话框（比如放弃修改的确认框）时交给它自己处理。
         if (confirming || !isTopmostDialog(dialog.element)) {
             return;
         }
@@ -384,13 +467,12 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     };
 
     const save = async () => {
-        if (closed || saving) {
+        if (closed || saving || loading) {
             return;
         }
         saving = true;
-        saveButton.disabled = true;
         // 保存期间锁住编辑，避免落盘内容与界面上看到的文本不一致
-        textarea.readOnly = true;
+        updateControls();
         try {
             const text = textarea.value;
             const target = active;
@@ -404,7 +486,11 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
                 return;
             }
             if (current.snapshot.text !== baseline) {
-                const overwrite = await askConfirm(t("conflictTitle"), t("conflictText"));
+                const overwrite = await askConfirm({
+                    title: t("conflictTitle"),
+                    text: t("conflictText"),
+                    confirmText: t("confirm"),
+                });
                 if (!overwrite || closed) {
                     return;
                 }
@@ -431,8 +517,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
         } finally {
             saving = false;
             if (!disposed) {
-                saveButton.disabled = false;
-                textarea.readOnly = false;
+                updateControls();
             }
         }
     };
@@ -464,6 +549,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     closeActiveEditor = () => {
         allowed = true;
         sheetHandle?.freeze();
+        confirmDialog?.destroy();
         disposeDialog();
     };
     rememberActive(active);
