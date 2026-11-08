@@ -13,6 +13,8 @@ permissions:
 
 jobs:
   release:
+    # 手动触发可以选任意分支，这里再拦一道：非 main 一律不发布
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -80,6 +82,9 @@ jobs:
 
       - name: Generate release notes
         if: steps.compare.outputs.release == 'true'
+        env:
+          # 首次发行要看仓库有没有发行版，生成说明时就要读 GitHub
+          GH_TOKEN: ${{ github.token }}
         run: node scripts/release-notes.mjs "${{ steps.compare.outputs.previous-tag }}" > RELEASE_NOTES.md
 
       # 由 gh 在创建 Release 时一并打 tag：上一步中途失败不会留下没有 Release 的 tag
