@@ -2,7 +2,7 @@
   "name": "edit-ignore-files-siyuan",
   "author": "wmy2981",
   "url": "https://github.com/wmy2981/edit-ignore-files-siyuan",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "minAppVersion": "3.1.20",
   "backends": [
     "all"

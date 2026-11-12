@@ -1,6 +1,6 @@
 {
   "name": "edit-ignore-files-siyuan",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Edit the SiYuan ignore files.",
   "main": "src/index.ts",
   "scripts": {
