@@ -2,7 +2,7 @@
 
 [中文](README.zh-CN.md) · **English**
 
-Edit the ignore files under SiYuan's `data/.siyuan/` in one line-numbered editor instead of a file manager.
+Edit the ignore files under SiYuan's `data/.siyuan/` inside SiYuan's own plugin settings panel, with line numbers, syntax hints and drafts that survive closing it.
 
 ## Files
 
@@ -17,9 +17,11 @@ Edit the ignore files under SiYuan's `data/.siyuan/` in one line-numbered editor
 
 ## Usage
 
-1. Open `Settings → Marketplace → Downloaded → Edit Ignore Files` and click its `Settings` icon; the editor opens.
-2. Switch files with the dropdown on top, then save. The last edited file is remembered.
-3. The asset cleanup rules only appear on SiYuan 3.8.11-alpha.2 or later; older kernels do not know that file, so it is not listed.
+1. Open `Settings → Marketplace → Downloaded → Edit Ignore Files` and click its gear icon. The panel is SiYuan's own plugin settings UI: the Electron desktop app opens it in a standalone settings window, while the browser and mobile get a dialog or bottom sheet.
+2. Switch files with the dropdown on top, then press `Save` in the panel footer. The last edited file is remembered.
+3. Unsaved edits are kept as a local draft, so closing the panel and opening it again shows them again; the status line says whether it is saved, has unsaved changes, or the file changed outside.
+4. `Reload local` drops the draft and reads the file from disk again; it asks for a second click first.
+5. The asset cleanup rules only appear on SiYuan 3.8.11-alpha.2 or later; older kernels do not know that file, so it is not listed.
 
 ## Syntax
 
@@ -30,11 +32,12 @@ Edit the ignore files under SiYuan's `data/.siyuan/` in one line-numbered editor
 ## Notes
 
 - Only rules that cannot work as written, or conditions that break the query, are reported. Nothing blocks saving.
+- Saving re-reads the file first: if it changed while the panel was open, nothing is written and the status line says that saving again overwrites; the next save then writes the current content.
 - When it takes effect: `syncignore` on the next sync, `indexignore` after the index is rebuilt, `embeddingignore` when the vector index runs again, both SQL files are re-read within 30 seconds, and `assets-cleanup-ignore` on the next unused-asset cleanup.
 - A UTF-8 BOM is removed on save, with a notice (except for the asset cleanup rules): the kernel of the sync and index ignore files keeps the BOM and the first line stops working.
-- The kernel guards the asset cleanup rules: a rule that cannot compile makes unused-asset cleanup fail, so it is validated before it is written, and a bad rule makes saving fail with the kernel message. The write also carries the revision, so a file changed while you edit it is overwritten only after you confirm.
-- The mobile bottom sheet needs SiYuan 3.8.10-alpha.5 or later; older versions get a normal centred dialog.
-- Only those six files are read or written.
+- The kernel guards the asset cleanup rules: a rule that cannot compile makes unused-asset cleanup fail, so it is validated before it is written, a bad rule keeps the panel open with the kernel message in the status line, and the write carries the revision so a file changed while you edit it is only overwritten after the warning.
+- Drafts live in the local browser storage: they are not written to disk, not synced, and disappear when the cache is cleared or on another device.
+- Only those six files are read or written, all through the official plugin APIs: `Setting` for the panel, `/api/file/*` and `/api/asset/*AssetCleanupIgnore` for the files.
 
 ## Bazaar Stats Graph
 

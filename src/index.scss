@@ -1,27 +1,25 @@
-// 只作用在本插件自己的对话框上：容器与可滚动正文都在入场动画开始前常驻图层提示，
-// 避免移动端动画结束时混入旧画面；同时不覆盖宿主任何过渡。
-.b3-dialog__container.eds-dialog {
-  will-change: transform;
-}
+// 只作用在本插件自己放进设置面板的控件上（.eds*）。
+//
+// 面板与按钮由宿主 Setting 提供，所以这里不做窗口级样式；高度也不能用百分比：
+// 宿主的 .b3-dialog__content 是 flex:1 + overflow:auto，控件外面没有确定高度可继承，
+// 编辑器直接给定值高度，其余内容超出时由面板自己滚动。
 
-// 确认框把焦点放在容器上，旧版宿主没有给容器去掉轮廓
-.b3-dialog__container.eds-confirm {
-  outline: none;
+// 宿主把控件包进它自己的条目行（.b3-label.config-item），那一行左右各 24px、上下各 16px 内边距，
+// 加上内容区的 16px 后，标题和控件会一起往里缩一倍（移动端尤其明显）。只对包含本插件控件的这一行
+// 清零内边距，标题与控件就都对齐到内容区留白，和重构前对话框的间距一致。
+// :has() 在 Electron 与移动端 WebView 上都可用；遇到不支持的宿主只会退回宿主的 24px，不会坏版。
+.b3-dialog__content > .config-item:has(> .fn__block > .eds) {
+  padding: 0;
 }
-
 .eds {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  min-height: 0;
   gap: 8px;
+  min-width: 0;
   box-sizing: border-box;
-  overflow: hidden;
-  will-change: transform;
 }
 
 .eds__files.b3-select {
-  flex-shrink: 0;
   // 列布局里不要被拉成整行宽
   align-self: flex-start;
   max-width: 100%;
@@ -29,7 +27,6 @@
 }
 
 .eds__desc {
-  flex-shrink: 0;
   color: var(--b3-theme-on-surface-light);
   font-size: 12px;
   line-height: 18px;
@@ -41,7 +38,6 @@
 }
 
 .eds__guide {
-  flex-shrink: 0;
   border-bottom: 1px solid var(--b3-theme-surface-lighter);
   padding-bottom: 8px;
 
@@ -61,32 +57,67 @@
   line-height: 18px;
 }
 
-.eds__notice {
+// 状态行与「重新读取」并排：状态说明当前是否已保存，按钮负责丢弃草稿重新读盘
+.eds__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.eds__status {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  line-height: 18px;
+  // 状态是这台机器上唯一的结果反馈，长文案要能换行而不是被截断
+  word-break: break-word;
+
+  &--success {
+    color: var(--b3-card-success-color, var(--b3-theme-on-surface));
+  }
+
+  &--info {
+    color: var(--b3-card-info-color, var(--b3-theme-on-surface));
+  }
+
+  &--warning {
+    color: var(--b3-card-warning-color, var(--b3-theme-on-surface));
+  }
+
+  &--error {
+    color: var(--b3-card-error-color, var(--b3-theme-error));
+  }
+}
+
+.eds__reload {
   flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 12px;
+}
+
+.eds__notice {
   color: var(--b3-card-warning-color, var(--b3-theme-on-surface));
   font-size: 12px;
   line-height: 18px;
 }
 
 .eds__lint {
-  flex-shrink: 0;
-  // 问题全部列出后在框内滚动；上限跟着对话框高度走，桌面与移动端都给编辑器留出空间
-  max-height: min(40%, 160px);
+  // 问题全部列出后在框内滚动，不跟面板抢高度
+  max-height: 140px;
   // 宿主 .b3-label__text 用 !important 锁死 overflow: hidden，这里必须同样用 !important 才能滚动
   overflow: auto !important;
   overscroll-behavior: contain;
   color: var(--b3-card-error-color, var(--b3-theme-error));
   font-size: 12px;
   line-height: 18px;
-  // 确有的滚动区域在移动端抽屉动画期间要常驻图层提示
-  will-change: transform;
 
   &[hidden] {
     display: none;
   }
 }
 
-// 严格文件（资源清理规则）的后果说明：它属于提示而不是某个具体错误，用弱一档的颜色
+// 严格文件（资源清理规则）的后果说明：属于提示而不是具体错误，用弱一档的颜色
 .eds__lint-note {
   color: var(--b3-theme-on-surface-light);
   margin-bottom: 4px;
@@ -94,12 +125,16 @@
 
 .eds__editor {
   display: flex;
-  flex: 1;
-  min-height: 0;
+  height: min(40vh, 360px);
   border: 1px solid var(--b3-border-color);
   border-radius: var(--b3-border-radius);
   overflow: hidden;
   background-color: var(--b3-theme-background);
+
+  @media (max-width: 720px) {
+    // 移动端是底部抽屉，键盘弹出后留给编辑区的高度更少
+    height: min(34vh, 260px);
+  }
 }
 
 .eds__gutter,
@@ -139,8 +174,6 @@
   color: var(--b3-theme-on-background);
   white-space: pre;
   overflow: auto;
-  // 正文的滚动区域同样常驻图层提示
-  will-change: transform;
   // 移动端浏览器会把小于 16px 的输入框放大
   font-size: 16px;
 

@@ -5,10 +5,10 @@ import { decideFileSwitch } from "../src/fileSwitch";
 const base = {
     active: "syncignore" as const,
     loading: false,
-    dirty: false,
     blocked: false,
 };
 
+// 未保存的改动留在草稿里，切换文件不再需要确认丢弃，只有「读取期间」这一个特例要处理。
 describe("decideFileSwitch", () => {
     test("restores the select when a switch is blocked", () => {
         assert.equal(decideFileSwitch("indexignore", { ...base, blocked: true }), "restore");
@@ -23,15 +23,11 @@ describe("decideFileSwitch", () => {
         assert.equal(decideFileSwitch("syncignore", { ...base, loading: true }), "cancel");
     });
 
-    test("loads another file during loading without asking again", () => {
-        assert.equal(decideFileSwitch("indexignore", { ...base, loading: true, dirty: true }), "load");
+    test("loads another file during loading", () => {
+        assert.equal(decideFileSwitch("indexignore", { ...base, loading: true }), "load");
     });
 
-    test("asks before discarding edits when not loading", () => {
-        assert.equal(decideFileSwitch("indexignore", { ...base, dirty: true }), "confirm");
-    });
-
-    test("loads directly when there is nothing to lose", () => {
+    test("loads another file directly", () => {
         assert.equal(decideFileSwitch("indexignore", base), "load");
     });
 });

@@ -2,17 +2,15 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import {
     ASSET_CLEANUP_FILE,
-    DEFAULT_IGNORE_FILE,
     IGNORE_FILES,
     availableIgnoreFiles,
     getIgnoreDefinition,
     getIgnoreSyntax,
     ignoreFilePath,
-    isIgnoreFileName,
 } from "../src/ignoreFiles";
 
 describe("IGNORE_FILES", () => {
-    test("lists the ignore files in panel order", () => {
+    test("lists the ignore files in panel order, syncignore first", () => {
         assert.deepEqual(IGNORE_FILES.map(file => file.name), [
             "syncignore",
             "indexignore",
@@ -32,11 +30,6 @@ describe("IGNORE_FILES", () => {
     test("assigns the sql syntax to the condition fragments", () => {
         assert.equal(getIgnoreSyntax("searchignore"), "sql");
         assert.equal(getIgnoreSyntax("refsearchignore"), "sql");
-    });
-
-    test("defaults to syncignore", () => {
-        assert.equal(DEFAULT_IGNORE_FILE, "syncignore");
-        assert.ok(IGNORE_FILES.some(file => file.name === DEFAULT_IGNORE_FILE));
     });
 
     test("gives every file a distinct i18n key stem", () => {
@@ -89,22 +82,6 @@ describe("availableIgnoreFiles", () => {
         for (const version of [undefined, "", "3.8"]) {
             assert.equal(availableIgnoreFiles(version).length, 5, String(version));
         }
-    });
-});
-
-describe("isIgnoreFileName", () => {
-    test("accepts every listed name", () => {
-        for (const { name } of IGNORE_FILES) {
-            assert.equal(isIgnoreFileName(name), true);
-        }
-    });
-
-    test("rejects anything else", () => {
-        assert.equal(isIgnoreFileName("conf.json"), false);
-        assert.equal(isIgnoreFileName(""), false);
-        assert.equal(isIgnoreFileName(undefined), false);
-        assert.equal(isIgnoreFileName(null), false);
-        assert.equal(isIgnoreFileName(42), false);
     });
 });
 

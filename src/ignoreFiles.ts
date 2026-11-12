@@ -50,13 +50,8 @@ export const IGNORE_FILES: readonly IgnoreFileDefinition[] = [
 
 export const ASSET_CLEANUP_FILE: IgnoreFileName = "assets-cleanup-ignore";
 
-export const DEFAULT_IGNORE_FILE: IgnoreFileName = "syncignore";
-
 export const getIgnoreDefinition = (name: string): IgnoreFileDefinition | undefined =>
     IGNORE_FILES.find(file => file.name === name);
-
-export const isIgnoreFileName = (value: unknown): value is IgnoreFileName =>
-    typeof value === "string" && IGNORE_FILES.some(file => file.name === value);
 
 export const getIgnoreSyntax = (name: IgnoreFileName): IgnoreSyntax =>
     getIgnoreDefinition(name)?.syntax ?? "gitignore";

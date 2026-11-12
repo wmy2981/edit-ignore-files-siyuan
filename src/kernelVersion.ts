@@ -5,7 +5,7 @@
 // 预发布段按点分段，纯数字段按数值比较、数字段低于字母段，所以 3.8.11-alpha.10 高于 3.8.11-alpha.2，
 // 不能直接比较字符串。解析不了的版本号一律当作「不支持」，宁可少给功能，也不要写坏内核不认识的文件。
 
-export interface KernelVersionParts {
+interface KernelVersionParts {
     core: [number, number, number];
     /** 预发布段，正式版为空数组 */
     pre: string[];
