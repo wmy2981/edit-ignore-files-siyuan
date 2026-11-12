@@ -170,3 +170,95 @@ describe("writeIgnoreFile", () => {
         assert.equal(await file.text(), "content != 'TODO'");
     });
 });
+
+// assets-cleanup-ignore 走内核的专用接口：读回来带 version（revision），写入要原样回传，
+// 内容也会先被内核校验，所以这里和上面五个文件的原始文件 API 用例分开。
+describe("readIgnoreFile for assets-cleanup-ignore", () => {
+    test("uses the asset cleanup API and keeps the revision", async () => {
+        stubFetch(() => response(200, JSON.stringify({
+            code: 0,
+            msg: "",
+            data: { content: "/assets/example.png\r\n", revision: "9f2c" },
+        })));
+        const result = await readIgnoreFile("assets-cleanup-ignore");
+        assert.deepEqual(result, { ok: true, snapshot: { text: "/assets/example.png\n", bom: false, revision: "9f2c" } });
+        assert.equal(calls[0].url, "/api/asset/getAssetCleanupIgnore");
+        assert.equal(calls[0].init?.method, "POST");
+        assert.deepEqual(JSON.parse(String(calls[0].init?.body)), {});
+    });
+
+    test("strips a UTF-8 BOM and flags it", async () => {
+        stubFetch(() => response(200, JSON.stringify({
+            code: 0,
+            data: { content: "\uFEFF/assets/", revision: "aa" },
+        })));
+        const result = await readIgnoreFile("assets-cleanup-ignore");
+        assert.deepEqual(result, { ok: true, snapshot: { text: "/assets/", bom: true, revision: "aa" } });
+    });
+
+    test("keeps the missing revision for a file that does not exist yet", async () => {
+        // 文件不存在时内核给空正文与 revision "missing"，保存时把它原样回传即可创建
+        stubFetch(() => response(200, JSON.stringify({ code: 0, data: { content: "", revision: "missing" } })));
+        const result = await readIgnoreFile("assets-cleanup-ignore");
+        assert.deepEqual(result, { ok: true, snapshot: { text: "", bom: false, revision: "missing" } });
+    });
+
+    test("reports a kernel error instead of treating it as an empty file", async () => {
+        // 读失败（不是不存在）不能让用户以为规则是空的
+        stubFetch(() => response(200, JSON.stringify({ code: -1, msg: "must be a regular file" })));
+        const result = await readIgnoreFile("assets-cleanup-ignore");
+        assert.deepEqual(result, { ok: false, message: "must be a regular file" });
+    });
+
+    test("reports an HTTP failure without a JSON body", async () => {
+        stubFetch(() => response(500, "<html>boom</html>", "Internal Server Error"));
+        const result = await readIgnoreFile("assets-cleanup-ignore");
+        assert.deepEqual(result, { ok: false, message: "500 Internal Server Error" });
+    });
+
+    test("reports a network failure instead of throwing", async () => {
+        globalThis.fetch = (async () => {
+            throw new Error("offline");
+        }) as unknown as typeof fetch;
+        const result = await readIgnoreFile("assets-cleanup-ignore");
+        assert.deepEqual(result, { ok: false, message: "Error: offline" });
+    });
+});
+
+describe("writeIgnoreFile for assets-cleanup-ignore", () => {
+    test("posts the content with the expected revision", async () => {
+        stubFetch(() => response(200, JSON.stringify({ code: 0, data: { content: "/assets/", revision: "bb" } })));
+        const result = await writeIgnoreFile("assets-cleanup-ignore", "/assets/", "aa");
+        assert.deepEqual(result, { ok: true, message: "" });
+        assert.equal(calls[0].url, "/api/asset/setAssetCleanupIgnore");
+        assert.equal(calls[0].init?.method, "POST");
+        assert.deepEqual(JSON.parse(String(calls[0].init?.body)), { content: "/assets/", expectedRevision: "aa" });
+    });
+
+    test("flags code 409 as a conflict so the editor can re-read", async () => {
+        stubFetch(() => response(200, JSON.stringify({ code: 409, msg: "changed; reload before saving" })));
+        const result = await writeIgnoreFile("assets-cleanup-ignore", "/assets/", "aa");
+        assert.deepEqual(result, { ok: false, conflict: true, message: "changed; reload before saving" });
+    });
+
+    test("surfaces the kernel validation message", async () => {
+        // 内核会先校验规则，写错的规则不会落盘
+        stubFetch(() => response(200, JSON.stringify({ code: -1, msg: "invalid asset cleanup ignore rule at line 2" })));
+        const result = await writeIgnoreFile("assets-cleanup-ignore", "/a\\yb", "aa");
+        assert.deepEqual(result, { ok: false, message: "invalid asset cleanup ignore rule at line 2" });
+    });
+
+    test("requires code 0 in the response body", async () => {
+        stubFetch(() => response(200, "ok", "OK"));
+        const result = await writeIgnoreFile("assets-cleanup-ignore", "/assets/", "aa");
+        assert.deepEqual(result, { ok: false, message: "200 OK" });
+    });
+
+    test("reports a network failure instead of throwing", async () => {
+        globalThis.fetch = (async () => {
+            throw new Error("offline");
+        }) as unknown as typeof fetch;
+        const result = await writeIgnoreFile("assets-cleanup-ignore", "/assets/", "aa");
+        assert.deepEqual(result, { ok: false, message: "Error: offline" });
+    });
+});

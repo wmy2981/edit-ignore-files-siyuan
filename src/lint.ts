@@ -1,14 +1,16 @@
-// 语法检查的分发：按文件所属的两套语法选对应的检查器，并把问题类型映射到文案 key。
-import type { IgnoreSyntax } from "./ignoreFiles";
+// 语法检查的分发：按文件所属的语法选对应的检查器，并把问题类型映射到文案 key。
+import { getIgnoreDefinition } from "./ignoreFiles";
+import type { IgnoreFileName, IgnoreSyntax } from "./ignoreFiles";
 import { lintGitignore } from "./lintGitignore";
 import { lintSql } from "./lintSql";
 
 /**
- * gitignore 类文件（syncignore / indexignore / embeddingignore）里会让内核丢掉整条规则的写法。
- * 三者由同一份 sabhiram/go-gitignore 编译，规则完全相同，只是匹配基准不同。
+ * gitignore 类文件（syncignore / indexignore / embeddingignore / assets-cleanup-ignore）里
+ * 会让内核无法编译这条规则的写法。它们由同一份 sabhiram/go-gitignore 编译，规则完全相同，
+ * 只是匹配基准不同；assets-cleanup-ignore 还会把合并冲突残留标记当成整份文件的错误。
  */
 export type GitignoreLintKind = "emptyNegation" | "invalidEscape" | "unclosedClass" | "unbalancedGroup" |
-    "badRepetition" | "starInClass" | "badClassRange";
+    "badRepetition" | "starInClass" | "badClassRange" | "conflictMarker";
 
 /**
  * SQL 类文件（searchignore / refsearchignore）里会让拼出来的语句跑不起来的写法。
@@ -34,6 +36,7 @@ export const LINT_KEYS: Record<IgnoreLintKind, string> = {
     badRepetition: "lintBadRepetition",
     starInClass: "lintStarInClass",
     badClassRange: "lintBadClassRange",
+    conflictMarker: "lintConflictMarker",
     emptyLine: "lintEmptyLine",
     commentLine: "lintCommentLine",
     unbalancedQuote: "lintUnbalancedQuote",
@@ -42,5 +45,11 @@ export const LINT_KEYS: Record<IgnoreLintKind, string> = {
     danglingOperator: "lintDanglingOperator",
 };
 
-export const lintIgnore = (syntax: IgnoreSyntax, text: string): LintIssue[] =>
-    syntax === "sql" ? lintSql(text) : lintGitignore(text);
+export const lintIgnore = (name: IgnoreFileName, text: string): LintIssue[] => {
+    const definition = getIgnoreDefinition(name);
+    const syntax: IgnoreSyntax = definition?.syntax ?? "gitignore";
+    if (syntax === "sql") {
+        return lintSql(text);
+    }
+    return lintGitignore(text, { strict: definition?.strict === true });
+};

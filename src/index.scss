@@ -86,6 +86,12 @@
   }
 }
 
+// 严格文件（资源清理规则）的后果说明：它属于提示而不是某个具体错误，用弱一档的颜色
+.eds__lint-note {
+  color: var(--b3-theme-on-surface-light);
+  margin-bottom: 4px;
+}
+
 .eds__editor {
   display: flex;
   flex: 1;

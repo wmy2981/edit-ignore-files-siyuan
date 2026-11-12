@@ -15,8 +15,8 @@
     "zh-CN": "编辑忽略文件"
   },
   "description": {
-    "default": "Edit the SiYuan ignore files.",
-    "zh-CN": "编辑思源的各种忽略文件。"
+    "default": "Edit the SiYuan ignore files, including the asset cleanup exclusions.",
+    "zh-CN": "编辑思源的各种忽略文件，包括资源清理排除规则。"
   },
   "readme": {
     "default": "README.md",
@@ -30,13 +30,17 @@
   "keywords": [
     "syncignore",
     "indexignore",
+    "assets-cleanup-ignore",
+    "unused assets",
     "searchignore",
     "embeddingignore",
     "gitignore",
     "忽略文件",
     "忽略规则",
     "同步忽略",
-    "排除"
+    "排除",
+    "资源清理",
+    "未引用资源"
   ],
   "icon": "icon.png",
   "preview": "preview.png",

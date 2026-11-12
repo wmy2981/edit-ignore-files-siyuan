@@ -147,3 +147,44 @@ describe("lintGitignore", () => {
         assert.deepEqual(lintGitignore("!assets/(manual"), [{ line: 1, kind: "unbalancedGroup" }]);
     });
 });
+
+// assets-cleanup-ignore 的内核先逐行校验冲突标记，再把整份规则交给同一个 go-gitignore 编译，
+// 任何一处编译不了都会让「清理未引用资源」报错中止，所以这类文件（strict）多报一类问题。
+describe("lintGitignore strict", () => {
+    const strict = { strict: true };
+
+    test("reports leftover merge conflict markers", () => {
+        const text = ["<<<<<<< HEAD", "/assets/example.png", "=======", "/assets/plugin/**", ">>>>>>> dev"].join("\n");
+        assert.deepEqual(lintGitignore(text, strict), [
+            { line: 1, kind: "conflictMarker" },
+            { line: 3, kind: "conflictMarker" },
+            { line: 5, kind: "conflictMarker" },
+        ]);
+    });
+
+    test("matches the kernel by checking the raw line prefix only", () => {
+        // 内核用 HasPrefix 判断原始行，缩进过的标记拦不住，只是永远匹配不上的普通规则
+        assert.deepEqual(lintGitignore(" <<<<<<< HEAD", strict), []);
+        assert.deepEqual(lintGitignore("\t=======", strict), []);
+    });
+
+    test("does not report markers for files whose kernel drops broken rules", () => {
+        // 其它忽略文件里这些行只是永远匹配不上的普通规则，不算写错
+        assert.deepEqual(lintGitignore("<<<<<<< HEAD\n=======\n>>>>>>> dev"), []);
+    });
+
+    test("keeps reporting the rule level problems", () => {
+        const text = ["/a\\yb", "!", "=======", "/x/[a"].join("\n");
+        assert.deepEqual(lintGitignore(text, strict), [
+            { line: 1, kind: "invalidEscape" },
+            { line: 2, kind: "emptyNegation" },
+            { line: 3, kind: "conflictMarker" },
+            { line: 4, kind: "unclosedClass" },
+        ]);
+    });
+
+    test("accepts a clean rule file", () => {
+        const text = ["# assets", "/assets/example.png", "/assets/plugin/**", "!/assets/plugin/tmp/**", ""].join("\n");
+        assert.deepEqual(lintGitignore(text, strict), []);
+    });
+});

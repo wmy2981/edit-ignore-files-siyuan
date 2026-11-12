@@ -5,8 +5,9 @@
 // - 保存前重读文件比对，内核可能在我们编辑期间改写它（加载规则前会做外观隔离块清理）；
 // - 保存后回读校验，确认落盘内容与编辑器一致。
 import { Dialog, getFrontend, showMessage } from "siyuan";
-import { DEFAULT_IGNORE_FILE, IGNORE_FILES, getIgnoreSyntax, isIgnoreFileName } from "./ignoreFiles";
-import type { IgnoreFileName } from "./ignoreFiles";
+import { DEFAULT_IGNORE_FILE, availableIgnoreFiles, getIgnoreDefinition, getIgnoreSyntax } from "./ignoreFiles";
+import type { IgnoreFileDefinition, IgnoreFileName } from "./ignoreFiles";
+import { readKernelVersion } from "./kernelVersion";
 import { readIgnoreFile, writeIgnoreFile } from "./ignoreFile";
 import type { ReadResult } from "./ignoreFile";
 import { LINT_KEYS, lintIgnore } from "./lint";
@@ -50,14 +51,17 @@ const format = (template: string, values: Record<string, string | number>) =>
 const escapeHtml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** syncignore → descSyncignore / guideSyncignore1 */
-const fileKey = (name: IgnoreFileName, prefix: string, suffix = "") =>
-    `${prefix}${name.charAt(0).toUpperCase()}${name.slice(1)}${suffix}`;
+/** syncignore → descSyncignore / guideSyncignore1；资源清理那一项的文件名带连字符，文案键另用 i18nKey */
+const fileKey = (name: IgnoreFileName, prefix: string, suffix = "") => {
+    const key = getIgnoreDefinition(name)?.i18nKey ?? name;
+    return `${prefix}${key.charAt(0).toUpperCase()}${key.slice(1)}${suffix}`;
+};
 
-const recallActive = (): IgnoreFileName => {
+/** 上次编辑的文件；当前内核不支持的文件（如旧版本上的资源清理规则）不认，退回默认项 */
+const recallActive = (files: readonly IgnoreFileDefinition[]): IgnoreFileName => {
     try {
         const stored = window.localStorage.getItem(ACTIVE_STORAGE_KEY);
-        return isIgnoreFileName(stored) ? stored : DEFAULT_IGNORE_FILE;
+        return files.find(file => file.name === stored)?.name ?? DEFAULT_IGNORE_FILE;
     } catch {
         return DEFAULT_IGNORE_FILE;
     }
@@ -94,7 +98,9 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     }
     opening = true;
     const current = generation;
-    const initialName = recallActive();
+    // 只列出当前内核真正支持的文件：旧内核不认识资源清理规则，内核版本拿不到时也按旧内核处理
+    const files = availableIgnoreFiles(readKernelVersion());
+    const initialName = recallActive(files);
     let read: ReadResult;
     try {
         read = await readIgnoreFile(initialName);
@@ -227,7 +233,7 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     };
 
     const renderFiles = () => {
-        filesBox.innerHTML = IGNORE_FILES.map(({ name }) => `<option value="${name}">${name}</option>`).join("");
+        filesBox.innerHTML = files.map(({ name }) => `<option value="${name}">${name}</option>`).join("");
         filesBox.value = active;
     };
 
@@ -247,19 +253,24 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     };
 
     const renderNotice = () => {
-        notice.hidden = !bom;
-        notice.textContent = bom ? t("bomNotice") : "";
+        // 资源清理规则的内核会先剥掉 BOM 再编译，带 BOM 不会让第一行失效，不用提示；保存时同样不写回
+        const warnBom = bom && getIgnoreDefinition(active)?.strict !== true;
+        notice.hidden = !warnBom;
+        notice.textContent = warnBom ? t("bomNotice") : "";
     };
 
     const renderLint = () => {
-        const issues = disposed ? [] : lintIgnore(getIgnoreSyntax(active), textarea.value);
+        const issues = disposed ? [] : lintIgnore(active, textarea.value);
         if (!issues.length) {
             lintBox.hidden = true;
             lintBox.textContent = "";
         } else {
+            // 资源清理规则写错时内核不会跳过它，而是让清理直接报错中止，先把后果写在问题列表前面
+            const note = getIgnoreDefinition(active)?.strict ? t("lintStrictNote") : "";
             // 全部列出来，由提示区自己滚动，不再截断成「还有 N 处」
             lintBox.hidden = false;
-            lintBox.innerHTML = issues.map((issue) => `<div>${escapeHtml(describeIssue(issue))}</div>`).join("");
+            lintBox.innerHTML = (note ? `<div class="eds__lint-note">${escapeHtml(note)}</div>` : "") +
+                issues.map((issue) => `<div>${escapeHtml(describeIssue(issue))}</div>`).join("");
         }
         // 提示行的出现或消失改变了内容高度，让抽屉重新量一次
         sheetHandle?.relayout();
@@ -497,11 +508,37 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
                     return;
                 }
             }
-            const written = await writeIgnoreFile(target, text);
+            const written = await writeIgnoreFile(target, text, current.snapshot.revision);
             if (closed) {
                 return;
             }
-            if (!written.ok) {
+            if (!written.ok && written.conflict) {
+                // 资源清理规则有版本号：内核直接用 409 挡住写入，问过用户后按重新读到的版本再写一次
+                const overwrite = await askConfirm({
+                    title: t("conflictTitle"),
+                    text: t("conflictText"),
+                    confirmText: t("confirm"),
+                });
+                if (!overwrite || closed) {
+                    return;
+                }
+                const latest = await readIgnoreFile(target);
+                if (closed) {
+                    return;
+                }
+                if (!latest.ok) {
+                    showMessage(format(t("readFailed"), { msg: latest.message }), 6000, "error");
+                    return;
+                }
+                const retried = await writeIgnoreFile(target, text, latest.snapshot.revision);
+                if (closed) {
+                    return;
+                }
+                if (!retried.ok) {
+                    showMessage(format(t("saveFailed"), { msg: retried.message }), 6000, "error");
+                    return;
+                }
+            } else if (!written.ok) {
                 showMessage(format(t("saveFailed"), { msg: written.message }), 6000, "error");
                 return;
             }
@@ -525,10 +562,12 @@ export const openIgnoreEditor = async (options: OpenEditorOptions): Promise<void
     };
 
     filesBox.addEventListener("change", () => {
-        if (!isIgnoreFileName(filesBox.value)) {
+        // 下拉框里只有当前内核支持的文件，出现别的值说明列表刚被替换过，直接忽略
+        const picked = files.find(file => file.name === filesBox.value);
+        if (!picked) {
             return;
         }
-        void switchTo(filesBox.value);
+        void switchTo(picked.name);
     });
     cancelButton.addEventListener("click", () => {
         void requestClose();

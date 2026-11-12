@@ -18,7 +18,8 @@
     "ignore-files",
     "syncignore",
     "indexignore",
-    "searchignore"
+    "searchignore",
+    "assets-cleanup-ignore"
   ],
   "author": "wmy2981",
   "license": "MIT",

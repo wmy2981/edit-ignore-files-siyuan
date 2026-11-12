@@ -1,4 +1,4 @@
-// gitignore 类忽略文件（syncignore / indexignore / embeddingignore）的语法检查。
+// gitignore 类忽略文件（syncignore / indexignore / embeddingignore / assets-cleanup-ignore）的语法检查。
 //
 // 内核用 sabhiram/go-gitignore 把每条规则转成正则再编译，`regexp.Compile` 的错误被丢弃，
 // 编译失败的那一行会静默消失。转换时只有 `*` 变成 `([^/]*)`、`.` 和 `?` 被转义，
@@ -9,11 +9,26 @@
 // - 字符类里出现 `*`（内核会把它替换成 `([^/]*)`，把字符类切断）；
 // - 字符类的范围反了，如 `[z-a]`。
 // 反过来 `\!`、`\#`、`\]`、`\*`、`a\b`（词边界）、`\p{L}`、`\Q…\E` 都能编译，只改变含义而不失效，不报。
+//
+// assets-cleanup-ignore 的内核行为不同：它先逐行校验，再把整份规则交给同一套 go-gitignore 编译，
+// 任何一行编译不了都会让「清理未引用资源」直接报错中止，不会静默丢弃。所以这类文件（strict）
+// 除了上面的写法，还要报 git 合并冲突残留标记——内核在跳过注释与空行之前就先拦下它们。
 import type { GitignoreLintKind, LintIssue } from "./lint";
+
+export interface GitignoreLintOptions {
+    /**
+     * 内核会拒绝整份文件而不是丢掉单行规则的文件（目前只有 assets-cleanup-ignore）。
+     * 打开后额外报合并冲突残留标记。
+     */
+    strict?: boolean;
+}
 
 const ESCAPE_LETTERS = "abdfnrstvwzABDQSW";
 // \p 允许的单字母类别名，其余写法要带 {…}
 const UNICODE_CATEGORIES = "LMNPSZC";
+
+// 内核按原始行首判断的三个冲突标记
+const CONFLICT_MARKERS = ["<<<<<<<", "=======", ">>>>>>>"];
 
 /** 读一个转义序列，返回它占用的字符数（含反斜杠）；不合法返回 0。 */
 const readEscape = (rule: string, index: number): number => {
@@ -163,13 +178,18 @@ const lintRule = (rule: string): GitignoreLintKind | null => {
 };
 
 /**
- * 只报「内核会静默丢弃这条规则」的写法，不做风格建议（缺前导斜杠、重复行、行尾空白一律不提示）。
+ * 只报「内核无法编译这条规则」的写法，不做风格建议（缺前导斜杠、重复行、行尾空白一律不提示）。
  * 少数依赖 Unicode 名称表的写法（如 `\p{Zzz}` 里拼错的类别名）与字符类里的转义范围不在覆盖范围内。
  * 规则是否真的命中文件由内核判定，这里不实现匹配引擎。
  */
-export const lintGitignore = (text: string): LintIssue[] => {
+export const lintGitignore = (text: string, options: GitignoreLintOptions = {}): LintIssue[] => {
     const issues: LintIssue[] = [];
     text.split("\n").forEach((raw, index) => {
+        // 与内核一致：按原始行首判断，先于注释与空行的跳过，缩进过的标记不算
+        if (options.strict && CONFLICT_MARKERS.some(marker => raw.startsWith(marker))) {
+            issues.push({ line: index + 1, kind: "conflictMarker" });
+            return;
+        }
         // 与内核一致：整行以 # 开头就是注释，这个判断在去掉首尾空格之前
         if (raw.startsWith("#")) {
             return;
