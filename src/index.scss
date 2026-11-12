@@ -1,21 +1,41 @@
 // 只作用在本插件自己放进设置面板的控件上（.eds*）。
 //
-// 面板与按钮由宿主 Setting 提供，所以这里不做窗口级样式；高度也不能用百分比：
-// 宿主的 .b3-dialog__content 是 flex:1 + overflow:auto，控件外面没有确定高度可继承，
-// 编辑器直接给定值高度，其余内容超出时由面板自己滚动。
+// 面板与按钮由宿主 Setting 提供，所以这里不做窗口级样式。
+// 编辑器高度跟着宿主给的高度走：.b3-dialog__content 是 flex:1 + overflow:auto，高度由对话框
+// （桌面独立设置窗口、移动端抽屉）决定，从这里把确定高度一路传到编辑器，
+// 窗口或抽屉变高变矮时编辑器跟着变，不再是写死的 min(40vh, 360px)。
 
 // 宿主把控件包进它自己的条目行（.b3-label.config-item），那一行左右各 24px、上下各 16px 内边距，
 // 加上内容区的 16px 后，标题和控件会一起往里缩一倍（移动端尤其明显）。只对包含本插件控件的这一行
 // 清零内边距，标题与控件就都对齐到内容区留白，和重构前对话框的间距一致。
+// 同时把它变成撑满内容区的纵向 flex 容器。这里必须是 height:100% 而不是 min-height：
+// 只有高度确定，下面的 flex:1 才能吃掉剩余空间；一旦高度随内容走，行号槽的行数会把
+// 编辑器的最小高度顶到内容高度，撑回老样子。内容确实放不下时（窗口太矮）子元素溢出这一行，
+// 由 .b3-dialog__content 的滚动接管。
 // :has() 在 Electron 与移动端 WebView 上都可用；遇到不支持的宿主只会退回宿主的 24px，不会坏版。
 .b3-dialog__content > .config-item:has(> .fn__block > .eds) {
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
+
+// 宿主 direction:"row" 的控件容器（.fn__block 默认只有 width:100%），继续往下传高度
+.b3-dialog__content > .config-item:has(> .fn__block > .eds) > .fn__block {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .eds {
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+  // 面板自身占满这一行，多出来的高度全部给编辑器
+  flex: 1;
+  min-height: 0;
   box-sizing: border-box;
 }
 
@@ -125,15 +145,19 @@
 
 .eds__editor {
   display: flex;
-  height: min(40vh, 360px);
+  // 吃掉面板剩下的高度：面板多高编辑器就多高
+  flex: 1;
+  // 兜底：宿主万一给不出确定高度（旧版设置面板、被别的东西改了布局），
+  // 也还有一个能用的编辑区，不会退化成几行。内容再多就由外层内容区滚动。
+  min-height: 200px;
   border: 1px solid var(--b3-border-color);
   border-radius: var(--b3-border-radius);
   overflow: hidden;
   background-color: var(--b3-theme-background);
 
   @media (max-width: 720px) {
-    // 移动端是底部抽屉，键盘弹出后留给编辑区的高度更少
-    height: min(34vh, 260px);
+    // 移动端抽屉更矮，键盘弹出后更少
+    min-height: 160px;
   }
 }
 

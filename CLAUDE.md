@@ -45,7 +45,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 
 - 入口：宿主 `hasPluginSetting()` 认 `plugin.setting`（或覆写过的 `openSetting`）；集市里的齿轮调 `plugin.openSetting()`，默认实现就是 `setting.open(displayName)`。
 - 条目渲染：每个 item 一行 `.b3-label.config-item`，`title` 渲染成 `.config-name`；`direction: "row"` 时控件被塞进 `.fn__block` 并补上 `fn__block` 类；只有控件本身是 `INPUT`/`TEXTAREA` 才会被 `dialog.bindInput` 接管（我们的根节点是 `div`，Enter 仍然是换行）。
-- 高度：`.b3-dialog__content` 是 `flex: 1; overflow: auto; padding: 16px`，控件外面没有确定高度可继承，所以编辑器给定值高度（桌面 `min(40vh, 360px)`，窄屏 `min(34vh, 260px)`），其余内容由面板自己滚动。
+- 高度：`.b3-dialog__content` 是 `flex: 1; overflow: auto; padding: 16px`，高度由对话框自身（桌面独立设置窗口 100%、移动端抽屉 80vh）确定，所以编辑器**跟着窗口/抽屉变**：`index.scss` 把 `height: 100%` 与纵向 flex 一路传到 `.eds__editor`（`flex: 1`），只有 `min-height` 兜底（桌面 200px、窄屏 160px），放不下时由内容区滚动。必须是 `height: 100%` 而不是 `min-height: 100%`：高度随内容走时，行号槽的行数会把编辑器的最小高度顶回内容高度。
 - 关闭：`Setting` 内部自己构造 `MobileDialog`，不透传 `beforeClose` / `mobileSheet.beforeClose`，插件拦不住关闭 → 未保存内容靠草稿兜底，不再弹「放弃修改」确认框。
 - 保存按钮：`confirmCallback` 由宿主底部「保存」触发，宿主用 `runPending` 包起来（保存期间锁编辑）；它的返回值不影响关闭（宿主恒 `return true`），**只有抛错能留在面板里**（宿主同时弹一句「保存失败，请重试」），所以保存失败一律抛错，具体原因写进状态行。
 - 独立窗口：`openInWindow: true`，桌面 Electron 用原生设置窗口打开（思源 3.8.7+，更早的宿主忽略该选项）。控件会被 `adoptNode` 迁进设置窗口，因此**只用元素引用与 `element.ownerDocument`**：不查 `document`、不挂 `document`/`window` 级监听、不用 `window.siyuan.dialogs` 判断最上层；存储也取 `element.ownerDocument.defaultView?.localStorage`。
@@ -88,8 +88,8 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - `assets-cleanup-ignore` 需要内核 3.8.11-alpha.2 及以上。更早的版本不列这个文件，也不发起任何请求；拿不到或解析不了 `kernelVersion` 时按旧内核处理。`minAppVersion` 仍是 `3.1.20`，旧版本照常编辑另外五个文件。
 - `minAppVersion` 为 `3.1.20`。`name` 必须与目录名、仓库名一致；不发布内核插件，因此没有 `kernels`；`disabledInPublish` 为 `true`。
 - `npm` 上 `siyuan` 类型包落后于宿主：`Setting.dialog` / `Setting.close` / `openInWindow` 都缺，`index.ts` 里做窄类型补充；不再需要 `containerClassName` / `beforeClose`。
-- 宿主的 `.b3-dialog__content` 是滚动区，编辑器拿不到「撑满」的高度，所以是定高而不是自适应。
-- 宿主的条目行 `.b3-label` 有 `padding: 16px 24px`，叠加内容区的 16px 后留白是重构前的两倍（移动端尤其明显），所以 `index.scss` 用 `.b3-dialog__content > .config-item:has(> .fn__block > .eds) { padding: 0 }` 只清零**包含本插件控件的那一行**。用 `:has()` 而不是给 `.eds` 加负外边距：负外边距会让块比滚动容器更宽，左移右不齐。不支持 `:has()` 的旧宿主会退回宿主的 24px，只是略宽。
+- 编辑器高度依赖宿主把高度传下来：`.b3-dialog__content` 高度不确定时（旧宿主或换了布局），编辑器退到 `min-height` 的兜底值而不是撑满，功能不受影响；移动端键盘弹出后抽屉不会变矮，编辑区可能压在键盘后面，靠宿主的 `scrollInputIntoView` 把光标滚进可视区。
+- 宿主的条目行 `.b3-label` 有 `padding: 16px 24px`，叠加内容区的 16px 后留白是重构前的两倍（移动端尤其明显），所以 `index.scss` 用 `:has()` 只处理**包含本插件控件的那一行**：清零它的 `padding`，并把它与 `.fn__block` 变成撑满内容区的纵向 flex 容器（顺带把高度传给编辑器）。用 `:has()` 而不是给 `.eds` 加负外边距：负外边距会让块比滚动容器更宽，左移右不齐。不支持 `:has()` 的旧宿主会退回宿主的 24px，只是略宽。
 - `assets/preview.html` 与 `assets/preview.png` 仍是旧版自建对话框的还原，与现在由宿主承载的设置面板不一致（这次改动先撤回了预览图，待重画）。重画时按 `src/editorPanel.ts` 的 DOM 与宿主 Setting 的条目行来，再跑 `npm run render:preview`。
 
 ## 构建产物
