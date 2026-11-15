@@ -49,6 +49,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - 关闭：`Setting` 内部自己构造 `MobileDialog`，不透传 `beforeClose` / `mobileSheet.beforeClose`，插件拦不住关闭 → 未保存内容靠草稿兜底，不再弹「放弃修改」确认框。
 - 保存按钮：`confirmCallback` 由宿主底部「保存」触发，宿主用 `runPending` 包起来（保存期间锁编辑）；它的返回值不影响关闭（宿主恒 `return true`），**只有抛错能留在面板里**（宿主同时弹一句「保存失败，请重试」），所以保存失败一律抛错，具体原因写进状态行。
 - 独立窗口：`openInWindow: true`，桌面 Electron 用原生设置窗口打开（思源 3.8.7+，更早的宿主忽略该选项）。控件会被 `adoptNode` 迁进设置窗口，因此**只用元素引用与 `element.ownerDocument`**：不查 `document`、不挂 `document`/`window` 级监听、不用 `window.siyuan.dialogs` 判断最上层；存储也取 `element.ownerDocument.defaultView?.localStorage`。
+- 样式：设置窗口是另一个文档，主窗口的插件样式进不去。`plugin.json` 必须声明 `settingsWindow: true`，宿主才会在设置窗口里加载本插件的 `index.css`（并另建一个插件实例，`/api/petal/loadPetals` 带 `settingsWindow: true` 时只返回声明过的插件）。漏了这条，独立窗口里的面板完全没有样式。声明只在桌面端生效，浏览器与移动端不受影响。
 
 ## 六个文件与其内核行为
 
@@ -85,6 +86,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - 面板与移动端抽屉都用宿主的（`Setting` + `MobileDialog`），不再自建，`MOBILE_FLICKER.md` 的相关偏离随之消失。
 - 宿主没有给插件拦截关闭的钩子，所以「关掉面板」不会询问未保存改动，只保证草稿不丢；想丢弃草稿必须点「重新读取本地」。
 - `openInWindow` 需要思源 3.8.7+；更早的桌面宿主忽略该选项，退回普通对话框。浏览器与移动端始终是对话框 / 底部抽屉。
+- `settingsWindow: true`（设置窗口加载插件样式与实例）需要思源 3.8.10-alpha.1+；3.8.7 到 3.8.9 的桌面宿主会开独立窗口但不加载插件样式，面板在那里是无样式状态。
 - `assets-cleanup-ignore` 需要内核 3.8.11-alpha.2 及以上。更早的版本不列这个文件，也不发起任何请求；拿不到或解析不了 `kernelVersion` 时按旧内核处理。`minAppVersion` 仍是 `3.1.20`，旧版本照常编辑另外五个文件。
 - `minAppVersion` 为 `3.1.20`。`name` 必须与目录名、仓库名一致；不发布内核插件，因此没有 `kernels`；`disabledInPublish` 为 `true`。
 - `npm` 上 `siyuan` 类型包落后于宿主：`Setting.dialog` / `Setting.close` / `openInWindow` 都缺，`index.ts` 里做窄类型补充；不再需要 `containerClassName` / `beforeClose`。
