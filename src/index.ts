@@ -2,6 +2,7 @@ import { Plugin, Setting } from "siyuan";
 import "./index.scss";
 import { createEditorPanel } from "./editorPanel";
 import type { EditorPanel } from "./editorPanel";
+import { canOpenSettingsWindow } from "./settingsWindow";
 
 // 宿主的 npm 类型包落后于实现：Setting 的 dialog / close / openInWindow 都还没有，
 // 这里只做窄类型补充，不扩散成全局断言。
@@ -25,7 +26,9 @@ export default class EditIgnoreFiles extends Plugin {
         // 控件、保存回调与销毁回调交出去，不自己建对话框。
         const setting = new Setting({
             // 控件必须自己创建：要在每次打开时重新读盘、恢复草稿
-            openInWindow: true,
+            // 只在桌面端 Electron 里要独立窗口：平板在移动端「桌面模式」下拿到的是桌面浏览器包，
+            // 那里宿主的窗口分支是空实现，要了反而一个面板都打不开
+            openInWindow: canOpenSettingsWindow(navigator.userAgent),
             confirmCallback: () => this.panel?.save(),
             destroyCallback: () => {
                 this.panel?.dispose();

@@ -15,7 +15,7 @@ npm run render:icon    # assets/icon.svg → assets/icon.png
 npm run render:preview # assets/preview.html → assets/preview.png（需要 npx playwright install chromium）
 ```
 
-`npm test` 先清空 `test-dist/`，再用 `tsconfig.test.json` 把 `test/` 和被引用的 `src/` 模块编译成 CommonJS 到 `test-dist/`，最后用 Node 内置测试运行器跑 `test-dist/test/*.test.js`。测试只覆盖不依赖思源的纯逻辑（版本比较、门槛过滤、草稿、状态、语法检查、两套文件读写通道、文案键完整性）；新增 `test/*.test.ts` 会被自动纳入，不用改脚本（`node --test` 的 glob 要 Node 21+，CI 与 `engines` 都锁在 22 以上）。
+`npm test` 先清空 `test-dist/`，再用 `tsconfig.test.json` 把 `test/` 和被引用的 `src/` 模块编译成 CommonJS 到 `test-dist/`，最后用 Node 内置测试运行器跑 `test-dist/test/*.test.js`。测试只覆盖不依赖思源的纯逻辑（版本比较、门槛过滤、草稿、状态、语法检查、两套文件读写通道、文案键完整性、宿主窗口判定）；新增 `test/*.test.ts` 会被自动纳入，不用改脚本（`node --test` 的 glob 要 Node 21+，CI 与 `engines` 都锁在 22 以上）。
 
 ## CI
 
@@ -37,6 +37,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - `src/lintGitignore.ts` — gitignore 语法检查（四个 gitignore 类文件）；`strict` 选项额外报 git 合并冲突残留标记。
 - `src/lintSql.ts` — SQL 片段检查（searchignore / refsearchignore）。
 - `src/fileSwitch.ts` — 文件切换的纯决策：读取期间选回当前文件要取消读取，不能当成重复操作后让旧结果继续生效。
+- `src/settingsWindow.ts` — 是否请求宿主 `openInWindow` 的纯判定（看 UA 里有没有 `Electron`）：只有桌面 Electron 才真能开原生设置窗口。
 - `src/index.scss` — 只描述面板里的自有控件（`.eds*`）。
 
 旧的 `editorDialog.ts`、`sheet.ts`、`sheetGesture.ts`（自建对话框与移动端抽屉）已删除：面板与抽屉都交给宿主的设置界面。
@@ -48,7 +49,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 - 高度：`.b3-dialog__content` 是 `flex: 1; overflow: auto; padding: 16px`，高度由对话框自身（桌面独立设置窗口 100%、移动端抽屉 80vh）确定，所以编辑器**跟着窗口/抽屉变**：`index.scss` 把 `height: 100%` 与纵向 flex 一路传到 `.eds__editor`（`flex: 1`），只有 `min-height` 兜底（桌面 200px、窄屏 160px），放不下时由内容区滚动。必须是 `height: 100%` 而不是 `min-height: 100%`：高度随内容走时，行号槽的行数会把编辑器的最小高度顶回内容高度。
 - 关闭：`Setting` 内部自己构造 `MobileDialog`，不透传 `beforeClose` / `mobileSheet.beforeClose`，插件拦不住关闭 → 未保存内容靠草稿兜底，不再弹「放弃修改」确认框。
 - 保存按钮：`confirmCallback` 由宿主底部「保存」触发，宿主用 `runPending` 包起来（保存期间锁编辑）；它的返回值不影响关闭（宿主恒 `return true`），**只有抛错能留在面板里**（宿主同时弹一句「保存失败，请重试」），所以保存失败一律抛错，具体原因写进状态行。
-- 独立窗口：`openInWindow: true`，桌面 Electron 用原生设置窗口打开（思源 3.8.7+，更早的宿主忽略该选项）。控件会被 `adoptNode` 迁进设置窗口，因此**只用元素引用与 `element.ownerDocument`**：不查 `document`、不挂 `document`/`window` 级监听、不用 `window.siyuan.dialogs` 判断最上层；存储也取 `element.ownerDocument.defaultView?.localStorage`。
+- 独立窗口：只在桌面 Electron 里传 `openInWindow: true`（`src/settingsWindow.ts` 按 UA 里有没有 `Electron` 判定；思源 3.8.7+，更早的宿主忽略该选项）。平板在移动端「桌面模式」下加载的其实是桌面浏览器包，UA 仍以 `SiYuan/` 开头，宿主的 `getFrontend()` 报 `desktop`，`openInWindow` 分支因此被选中，而这段实现在浏览器包里是空的（`openNativeSettings` 整段写在 `#if !BROWSER` 里），面板会**静默打不开**；所以一律按「是不是 Electron」要窗口，其余场合退回宿主的对话框。控件会被 `adoptNode` 迁进设置窗口，因此**只用元素引用与 `element.ownerDocument`**：不查 `document`、不挂 `document`/`window` 级监听、不用 `window.siyuan.dialogs` 判断最上层；存储也取 `element.ownerDocument.defaultView?.localStorage`。
 - 样式：设置窗口是另一个文档，主窗口的插件样式进不去。`plugin.json` 必须声明 `settingsWindow: true`，宿主才会在设置窗口里加载本插件的 `index.css`（并另建一个插件实例，`/api/petal/loadPetals` 带 `settingsWindow: true` 时只返回声明过的插件）。漏了这条，独立窗口里的面板完全没有样式。声明只在桌面端生效，浏览器与移动端不受影响。
 
 ## 六个文件与其内核行为
@@ -85,7 +86,7 @@ npm run render:preview # assets/preview.html → assets/preview.png（需要 npx
 
 - 面板与移动端抽屉都用宿主的（`Setting` + `MobileDialog`），不再自建，`MOBILE_FLICKER.md` 的相关偏离随之消失。
 - 宿主没有给插件拦截关闭的钩子，所以「关掉面板」不会询问未保存改动，只保证草稿不丢；想丢弃草稿必须点「重新读取本地」。
-- `openInWindow` 需要思源 3.8.7+；更早的桌面宿主忽略该选项，退回普通对话框。浏览器与移动端始终是对话框 / 底部抽屉。
+- `openInWindow` 只对桌面 Electron 传（思源 3.8.7+，更早的桌面宿主忽略该选项）。手机与平板的「桌面模式」虽然是桌面布局，加载的却是桌面浏览器包，原生窗口在那里根本不存在，一律退回宿主的对话框 / 底部抽屉。
 - `settingsWindow: true`（设置窗口加载插件样式与实例）需要思源 3.8.10-alpha.1+；3.8.7 到 3.8.9 的桌面宿主会开独立窗口但不加载插件样式，面板在那里是无样式状态。
 - `assets-cleanup-ignore` 需要内核 3.8.11-alpha.2 及以上。更早的版本不列这个文件，也不发起任何请求；拿不到或解析不了 `kernelVersion` 时按旧内核处理。`minAppVersion` 仍是 `3.1.20`，旧版本照常编辑另外五个文件。
 - `minAppVersion` 为 `3.1.20`。`name` 必须与目录名、仓库名一致；不发布内核插件，因此没有 `kernels`；`disabledInPublish` 为 `true`。
