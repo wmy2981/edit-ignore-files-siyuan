@@ -15,7 +15,7 @@ npm run render:icon    # assets/icon.svg → assets/icon.png
 npm run render:preview # assets/preview.html → assets/preview.png（需要 npx playwright install chromium）
 ```
 
-`npm test` 先清空 `test-dist/`，再用 `tsconfig.test.json` 把 `test/` 和被引用的 `src/` 模块编译成 CommonJS 到 `test-dist/`，最后用 Node 内置测试运行器跑 `test-dist/test/*.test.js`。测试只覆盖不依赖思源的纯逻辑（版本比较、门槛过滤、草稿、状态、语法检查、两套文件读写通道、文案键完整性、宿主窗口判定）；新增 `test/*.test.ts` 会被自动纳入，不用改脚本（`node --test` 的 glob 要 Node 21+，CI 与 `engines` 都锁在 22 以上）。
+`npm test` 先清空 `test-dist/`，再用 `tsconfig.test.json` 把 `test/` 和被引用的 `src/` 模块编译成 CommonJS 到 `test-dist/`，最后用 Node 内置测试运行器跑 `test-dist/test/*.test.js`。测试只覆盖不依赖思源的纯逻辑（版本比较、门槛过滤、草稿、状态、语法检查、两套文件读写通道、文案键完整性、宿主窗口判定）；新增 `test/*.test.ts` 会被自动纳入，不用改脚本（`node --test` 的 glob 要 Node 21+，CI 与 `engines` 都锁在 24 以上）。
 
 ## CI
 

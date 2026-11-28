@@ -16,7 +16,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "noEmit": true,
-    "types": []
+    "types": [
+      "vite/client"
+    ]
   },
   "include": [
     "src/**/*.ts"
